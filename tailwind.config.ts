@@ -10,47 +10,45 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: "#fdf4ff",
-          100: "#fae8ff",
-          200: "#f5d0fe",
-          300: "#f0abfc",
-          400: "#e879f9",
-          500: "#d946ef",
-          600: "#c026d3",
-          700: "#a21caf",
-          800: "#86198f",
-          900: "#701a75",
-        },
-        festive: {
-          gold: "#F59E0B",
-          rose: "#F43F5E",
-          emerald: "#10B981",
-          violet: "#8B5CF6",
-          amber: "#D97706",
-          dark: "#0F172A",
-          surface: "#1E293B",
-        },
+        // Superhuman Editorial Design Tokens
+        "midnight-wine": "#421d24",
+        "royal-violet": "#714cb6",
+        "lilac-mist": "#d4c7ff",
+        "deep-lagoon": "#0c4243",
+        "warm-parchment": "#f2f0eb",
+        "soft-mist": "#e3e3e2",
+        "ink-charcoal": "#292827",
+        "stone-gray": "#666666",
+        "paper-white": "#ffffff",
       },
-      animation: {
-        "pulse-subtle": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "fade-in": "fadeIn 0.3s ease-in-out",
-        "slide-down": "slideDown 0.3s ease-out",
-        "slide-up": "slideUp 0.3s ease-out",
+      fontWeight: {
+        w460: "460",
+        w540: "540",
       },
-      keyframes: {
-        fadeIn: {
-          "0%": { opacity: "0", transform: "translateY(6px)" },
-          "100%": { opacity: "1", transform: "translateY(0)" },
-        },
-        slideDown: {
-          "0%": { transform: "translateY(-10px)", opacity: "0" },
-          "100%": { transform: "translateY(0)", opacity: "1" },
-        },
-        slideUp: {
-          "0%": { transform: "translateY(10px)", opacity: "0" },
-          "100%": { transform: "translateY(0)", opacity: "1" },
-        },
+      letterSpacing: {
+        "display": "-0.028em",
+        "heading-lg": "-0.027em",
+        "heading-sm": "-0.022em",
+      },
+      borderRadius: {
+        "tabs": "8px",
+        "cards": "16px",
+        "buttons": "16px",
+        "small-buttons": "8px",
+        "floating-cards": "16px",
+      },
+      boxShadow: {
+        subtle: "rgb(113, 76, 182) 0px 0px 0px 1px inset",
+      },
+      fontFamily: {
+        sans: [
+          "Inter",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"Segoe UI"',
+          "Roboto",
+          "sans-serif",
+        ],
       },
     },
   },
