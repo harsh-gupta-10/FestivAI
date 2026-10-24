@@ -1,3 +1,9 @@
-import PublicInvitePage from "@/app/invite/[id]/page";
+import { PublicInvite } from "@/components/PublicInvite";
 
-export default PublicInvitePage;
+interface InvitePageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function Page({ params }: InvitePageProps) {
+  return <PublicInvite params={params} />;
+}

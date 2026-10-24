@@ -1,3 +1,9 @@
-import EventDashboardPage from "@/app/events/[id]/dashboard/page";
+import { EventDashboard } from "@/components/EventDashboard";
 
-export default EventDashboardPage;
+interface DashboardPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function Page({ params }: DashboardPageProps) {
+  return <EventDashboard params={params} />;
+}

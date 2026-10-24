@@ -15,7 +15,7 @@ export default function AppWorkspacePage() {
   const [inspectorData, setInspectorData] = useState<InspectorData | null>(null);
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 selection:bg-fuchsia-500 selection:text-white">
+    <div className="min-h-screen flex flex-col bg-[#f2f0eb] text-[#292827] selection:bg-[#d4c7ff] selection:text-[#292827]">
       {/* App Workspace Banner */}
       <div className="bg-[#421d24] text-white px-4 py-2 text-xs border-b border-white/10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -47,7 +47,7 @@ export default function AppWorkspacePage() {
         />
       </main>
 
-      <footer className="border-t border-slate-900 py-6 text-center text-xs text-slate-500">
+      <footer className="border-t border-[#e3e3e2] py-6 text-center text-xs text-[#666666]">
         <p>FestivAI Workspace — Hosted on Cloudflare Workers, D1 SQLite & R2</p>
       </footer>
 
