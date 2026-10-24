@@ -24,14 +24,19 @@ fi
 
 echo ""
 echo "Step 2: Creating Cloudflare D1 Database 'festivai-db'..."
-D1_OUTPUT=$(npx wrangler d1 create festivai-db || true)
+D1_OUTPUT=$(npx wrangler d1 create festivai-db 2>&1 || true)
 echo "$D1_OUTPUT"
 
 # Extract database_id if possible
 DB_ID=$(echo "$D1_OUTPUT" | grep -oE "database_id = \"[^\"]+\"" | cut -d'\"' -f2 || echo "")
 
+if [ -z "$DB_ID" ]; then
+  # In case it already existed, query d1 list
+  DB_ID=$(npx wrangler d1 list --json 2>/dev/null | grep -B2 -A2 "festivai-db" | grep -oE '"uuid":\s*"[^"]+"' | head -n1 | cut -d'"' -f4 || echo "")
+fi
+
 if [ -n "$DB_ID" ]; then
-  echo "✅ Created D1 database ID: $DB_ID"
+  echo "✅ Configured D1 database ID: $DB_ID"
   echo "Updating wrangler.jsonc with database_id: $DB_ID..."
   # Replace database_id in wrangler.jsonc
   sed -i "s/\"database_id\": \"[^\"]*\"/\"database_id\": \"$DB_ID\"/g" wrangler.jsonc
@@ -66,9 +71,18 @@ if [[ "$SET_SECRET" =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "======================================================"
-echo "🎉 Setup complete! Next steps:"
-echo "  1. npm run dev        -> Run Next.js locally (with SQLite fallback)"
-echo "  2. npm run preview    -> Preview on local Cloudflare Workers runtime"
-echo "  3. npm run deploy     -> Deploy production build to Cloudflare Workers"
-echo "======================================================"
+read -p "Would you like to deploy FestivAI to Cloudflare Workers production now? (y/N) " DEPLOY_NOW
+if [[ "$DEPLOY_NOW" =~ ^[Yy]$ ]]; then
+  echo "🚀 Deploying FestivAI to Cloudflare Workers via OpenNext..."
+  npm run deploy
+  echo ""
+  echo "======================================================"
+  echo "🎉 FestivAI is officially live on Cloudflare Workers!"
+  echo "======================================================"
+else
+  echo ""
+  echo "======================================================"
+  echo "🎉 Setup complete! When you are ready to deploy, run:"
+  echo "  npm run deploy"
+  echo "======================================================"
+fi
