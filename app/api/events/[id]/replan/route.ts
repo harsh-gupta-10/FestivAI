@@ -11,27 +11,38 @@ export async function POST(
     const body = (await req.json()) as any;
     const { replanPrompt, model = "o3-mini" } = body;
 
-    if (!replanPrompt || typeof replanPrompt !== "string" || !replanPrompt.trim()) {
-      return NextResponse.json({ error: "Replan prompt is required" }, { status: 400 });
+    const { validateReplanPrompt } = await import("@/lib/validation");
+    const check = validateReplanPrompt(replanPrompt);
+    if (!check.isValid) {
+      return NextResponse.json({ error: check.error }, { status: 400 });
     }
+    const cleanPrompt = check.sanitizedValue || replanPrompt;
 
     const existing = await getEventByIdOrSlug(id);
     if (!existing) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    // Custom API key from header if user supplied it in settings
-    const customApiKey = req.headers.get("x-openai-api-key") || undefined;
+    // Custom API key from headers or Cloudflare bindings
+    const customHeaderKey =
+      req.headers.get("x-openai-api-key") ||
+      req.headers.get("x-api-key") ||
+      req.headers.get("x-gemini-api-key") ||
+      undefined;
+
+    const { getAppBindings } = await import("@/lib/cloudflare");
+    const bindings = await getAppBindings();
+    const effectiveKey = customHeaderKey || bindings.OPENAI_API_KEY || bindings.GEMINI_API_KEY;
 
     const replanResult = await replanMasterplan({
       currentPlan: existing.plan,
-      replanPrompt: replanPrompt.trim(),
+      replanPrompt: cleanPrompt,
       totalBudget: existing.event.total_budget,
       currency: existing.event.currency,
       eventType: existing.event.event_type,
       title: existing.event.title,
       model,
-      customApiKey,
+      customApiKey: effectiveKey,
     });
 
     // Save updated plan in Cloudflare D1

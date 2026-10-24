@@ -1,9 +1,10 @@
-import { getFallbackD1, getFallbackR2 } from "./db-fallback";
+import { getFallbackD1, getFallbackR2 } from "./db-fallback.ts";
 
 export interface AppBindings {
   DB: D1Database | any;
   BUCKET: R2Bucket | any;
   OPENAI_API_KEY?: string;
+  GEMINI_API_KEY?: string;
   isFallback: boolean;
 }
 
@@ -22,6 +23,7 @@ export async function getAppBindings(): Promise<AppBindings> {
         DB: ctx.env.DB,
         BUCKET: ctx.env.BUCKET || getFallbackR2(),
         OPENAI_API_KEY: ctx.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY,
+        GEMINI_API_KEY: (ctx.env as any).GEMINI_API_KEY || process.env.GEMINI_API_KEY,
         isFallback: false,
       };
     }
@@ -35,6 +37,7 @@ export async function getAppBindings(): Promise<AppBindings> {
     DB: getFallbackD1() as any,
     BUCKET: getFallbackR2() as any,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     isFallback: true,
   };
 }

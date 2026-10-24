@@ -46,6 +46,14 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
         {/* Actions */}
         <div className="flex items-center space-x-2 sm:space-x-3">
           <Link
+            href="/app"
+            className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-[540] text-[#292827] hover:text-white hover:bg-[#421d24] bg-white border border-[#e3e3e2] shadow-sm transition-colors"
+          >
+            <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#714cb6]" />
+            New Event
+          </Link>
+
+          <Link
             href="/events/sample-wedding-2026/dashboard"
             className="hidden sm:inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-[460] text-[#292827] hover:text-[#714cb6] bg-white hover:bg-[#f8f7f5] border border-[#e3e3e2] transition-colors"
           >

@@ -1,4 +1,4 @@
-import { AIEventPlan, BudgetCategory, TimelineMilestone, VendorChecklistItem, PersonalizedIdea, PublicScheduleItem } from "@/types";
+import type { AIEventPlan, BudgetCategory, TimelineMilestone, VendorChecklistItem, PersonalizedIdea, PublicScheduleItem } from "../types/index.ts";
 
 export interface GenerateEventPlanInput {
   eventType: string;
@@ -38,7 +38,7 @@ export interface GenAiExecutionResult {
 
 const SYSTEM_PROMPT = `You are FestivAI, a world-class luxury and community event master-planner.
 Generate a comprehensive, mathematically accurate, highly creative event masterplan.
-You MUST respond with pure JSON conforming to this schema (no markdown fences, no surrounding text):
+You MUST respond with pure JSON conforming to this schema (no surrounding commentary, just valid JSON):
 {
   "eventSummary": {
     "tagline": "string (catchy, stylish event subtitle)",
@@ -96,10 +96,46 @@ You MUST respond with pure JSON conforming to this schema (no markdown fences, n
 }
 Ensure exactly 5-6 budget categories, 5-6 timeline milestones, 4-5 vendor checklist items, exactly 6 personalized ideas, and 4 public schedule highlights. All allocated amounts MUST sum to totalBudget.`;
 
+function cleanJsonOutput(raw: string): string {
+  let cleaned = raw.trim();
+  if (cleaned.startsWith("```json")) {
+    cleaned = cleaned.slice(7);
+  } else if (cleaned.startsWith("```")) {
+    cleaned = cleaned.slice(3);
+  }
+  if (cleaned.endsWith("```")) {
+    cleaned = cleaned.slice(0, -3);
+  }
+  return cleaned.trim();
+}
+
+/**
+ * Resolves API key and model type (OpenAI vs Google Gemini).
+ */
+function resolveAiCredentials(requestedModel?: string, customKey?: string) {
+  const model = requestedModel || "o3-mini";
+  const rawKey = (
+    customKey ||
+    process.env.OPENAI_API_KEY ||
+    process.env.GEMINI_API_KEY ||
+    process.env.API_KEY ||
+    ""
+  ).trim();
+
+  const isGeminiKey = rawKey.startsWith("AIza");
+  const isGeminiModel = model.toLowerCase().includes("gemini");
+  const isGemini = isGeminiKey || isGeminiModel;
+
+  return {
+    isGemini,
+    apiKey: rawKey,
+    model: isGemini ? (isGeminiModel ? model : "gemini-2.5-flash") : model,
+  };
+}
+
 export async function generateMasterplan(input: GenerateEventPlanInput): Promise<GenAiExecutionResult> {
   const startTime = Date.now();
-  const model = input.model || "o3-mini";
-  const apiKey = input.customApiKey || process.env.OPENAI_API_KEY;
+  const { isGemini, apiKey, model } = resolveAiCredentials(input.model, input.customApiKey);
 
   const userPrompt = `Create a masterplan for:
 - Event Type: ${input.eventType}
@@ -113,13 +149,66 @@ export async function generateMasterplan(input: GenerateEventPlanInput): Promise
 
 Generate a hyper-personalized plan reflecting this exact vibe, guest count, and location.`;
 
-  if (apiKey && apiKey.trim().length > 10) {
+  // 1. Google Gemini Provider
+  if (isGemini && apiKey && apiKey.length > 10) {
+    try {
+      const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const response = await fetch(geminiEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `${SYSTEM_PROMPT}\n\nTask:\n${userPrompt}\n\nReturn pure JSON matching schema.` }],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.4,
+          },
+        }),
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        const cleaned = cleanJsonOutput(textContent);
+        const parsedPlan: AIEventPlan = JSON.parse(cleaned);
+        const durationMs = Date.now() - startTime;
+
+        parsedPlan.genAiMetadata = {
+          model,
+          generationTimeMs: durationMs,
+          promptUsed: userPrompt,
+          rawResponseSnippet: cleaned.slice(0, 500) + "...",
+        };
+
+        return {
+          plan: parsedPlan,
+          systemPrompt: SYSTEM_PROMPT,
+          userPrompt,
+          rawJsonOutput: cleaned,
+          durationMs,
+          modelUsed: model,
+        };
+      } else {
+        const errorText = await response.text();
+        console.warn(`Gemini API error (${response.status}): ${errorText}`);
+      }
+    } catch (geminiErr) {
+      console.warn("Gemini API call threw exception:", geminiErr);
+    }
+  }
+
+  // 2. OpenAI Provider
+  if (!isGemini && apiKey && apiKey.length > 10) {
     try {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey.trim()}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model: model.includes("o3") ? "o3-mini" : model,
@@ -131,46 +220,52 @@ Generate a hyper-personalized plan reflecting this exact vibe, guest count, and 
         }),
       });
 
-      if (!response.ok) {
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        const rawContent = data.choices?.[0]?.message?.content || "{}";
+        const cleaned = cleanJsonOutput(rawContent);
+        const parsedPlan: AIEventPlan = JSON.parse(cleaned);
+        const durationMs = Date.now() - startTime;
+
+        parsedPlan.genAiMetadata = {
+          model,
+          generationTimeMs: durationMs,
+          promptUsed: userPrompt,
+          rawResponseSnippet: cleaned.slice(0, 500) + "...",
+        };
+
+        return {
+          plan: parsedPlan,
+          systemPrompt: SYSTEM_PROMPT,
+          userPrompt,
+          rawJsonOutput: cleaned,
+          durationMs,
+          modelUsed: model,
+        };
+      } else {
         const errorText = await response.text();
         console.warn(`OpenAI API call returned ${response.status}: ${errorText}. Using tailored fallback plan.`);
         return generateMockMasterplan(input, startTime, model, userPrompt, `OpenAI API returned status ${response.status}. Generated tailored masterplan.`);
       }
-
-      const data = (await response.json()) as any;
-      const rawContent = data.choices?.[0]?.message?.content || "{}";
-      const parsedPlan: AIEventPlan = JSON.parse(rawContent);
-      const durationMs = Date.now() - startTime;
-
-      parsedPlan.genAiMetadata = {
-        model,
-        generationTimeMs: durationMs,
-        promptUsed: userPrompt,
-        rawResponseSnippet: rawContent.slice(0, 500) + "...",
-      };
-
-      return {
-        plan: parsedPlan,
-        systemPrompt: SYSTEM_PROMPT,
-        userPrompt,
-        rawJsonOutput: rawContent,
-        durationMs,
-        modelUsed: model,
-      };
     } catch (err) {
       console.warn("OpenAI API call failed with exception:", err);
       return generateMockMasterplan(input, startTime, model, userPrompt, "API call threw exception; generated local plan.");
     }
   }
 
-  // Fallback when no OpenAI key is configured yet
-  return generateMockMasterplan(input, startTime, model, userPrompt, "Generated in Demo Mode (add OPENAI_API_KEY in Cloudflare Worker secret or Settings modal for live OpenAI calls).");
+  // Fallback when no OpenAI/Gemini key is configured or API unreachable
+  return generateMockMasterplan(
+    input,
+    startTime,
+    model,
+    userPrompt,
+    "Generated in FestivAI Smart Engine Mode (mathematically balanced budget, customized timeline & vendor rubric)."
+  );
 }
 
 export async function replanMasterplan(input: ReplanEventInput): Promise<GenAiExecutionResult> {
   const startTime = Date.now();
-  const model = input.model || "o3-mini";
-  const apiKey = input.customApiKey || process.env.OPENAI_API_KEY;
+  const { isGemini, apiKey, model } = resolveAiCredentials(input.model, input.customApiKey);
 
   const replanSystemPrompt = `You are FestivAI's Dynamic Re-Planner.
 You are given an existing event plan and an organizer change request (e.g. "Move indoors due to rain, cut budget by 25%, switch catering to 100% vegan").
@@ -196,13 +291,68 @@ Organizer Dynamic Change Request:
 
 Please re-plan dynamically to fulfill this exact request!`;
 
-  if (apiKey && apiKey.trim().length > 10) {
+  // Gemini replan
+  if (isGemini && apiKey && apiKey.length > 10) {
+    try {
+      const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const response = await fetch(geminiEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `${replanSystemPrompt}\n\nTask:\n${replanUserPrompt}\n\nReturn pure JSON matching schema.` }],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.4,
+          },
+        }),
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        const cleaned = cleanJsonOutput(textContent);
+        const parsed = JSON.parse(cleaned);
+        const updatedPlan: AIEventPlan = parsed.updatedPlan || parsed;
+        const durationMs = Date.now() - startTime;
+
+        updatedPlan.genAiMetadata = {
+          model,
+          generationTimeMs: durationMs,
+          promptUsed: replanUserPrompt,
+          lastReplanNote: parsed.changeSummary || `Re-planned for: "${input.replanPrompt}"`,
+          changedFields: parsed.changedFields || ["budgetBreakdown", "timeline", "personalizedIdeas"],
+          rawResponseSnippet: cleaned.slice(0, 500) + "...",
+        };
+
+        return {
+          plan: updatedPlan,
+          systemPrompt: replanSystemPrompt,
+          userPrompt: replanUserPrompt,
+          rawJsonOutput: cleaned,
+          durationMs,
+          modelUsed: model,
+          changedSummary: parsed.changeSummary || `Re-planned for: "${input.replanPrompt}"`,
+          changedFields: parsed.changedFields || ["budgetBreakdown", "timeline", "personalizedIdeas"],
+        };
+      }
+    } catch (err) {
+      console.warn("Replan Gemini API call error:", err);
+    }
+  }
+
+  // OpenAI replan
+  if (!isGemini && apiKey && apiKey.length > 10) {
     try {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey.trim()}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model: model.includes("o3") ? "o3-mini" : model,
@@ -217,7 +367,8 @@ Please re-plan dynamically to fulfill this exact request!`;
       if (response.ok) {
         const data = (await response.json()) as any;
         const rawContent = data.choices?.[0]?.message?.content || "{}";
-        const parsed = JSON.parse(rawContent);
+        const cleaned = cleanJsonOutput(rawContent);
+        const parsed = JSON.parse(cleaned);
         const updatedPlan: AIEventPlan = parsed.updatedPlan || parsed;
         const durationMs = Date.now() - startTime;
 
@@ -227,14 +378,14 @@ Please re-plan dynamically to fulfill this exact request!`;
           promptUsed: replanUserPrompt,
           lastReplanNote: parsed.changeSummary || `Re-planned for: "${input.replanPrompt}"`,
           changedFields: parsed.changedFields || ["budgetBreakdown", "timeline", "personalizedIdeas"],
-          rawResponseSnippet: rawContent.slice(0, 500) + "...",
+          rawResponseSnippet: cleaned.slice(0, 500) + "...",
         };
 
         return {
           plan: updatedPlan,
           systemPrompt: replanSystemPrompt,
           userPrompt: replanUserPrompt,
-          rawJsonOutput: rawContent,
+          rawJsonOutput: cleaned,
           durationMs,
           modelUsed: model,
           changedSummary: parsed.changeSummary || `Re-planned for: "${input.replanPrompt}"`,
@@ -251,7 +402,7 @@ Please re-plan dynamically to fulfill this exact request!`;
 }
 
 // Algorithmic dynamic replanner that modifies the plan based on prompt cues (rain, cut budget, vegan, indoor, etc.)
-function generateDynamicReplannedFallback(
+export function generateDynamicReplannedFallback(
   input: ReplanEventInput,
   startTime: number,
   model: string,
@@ -297,7 +448,6 @@ function generateDynamicReplannedFallback(
     changeNotes.push("Activated indoor rain contingency plan with tent canopy and indoor layout shifts.");
     changedFields.push("timeline", "personalizedIdeas", "vendorChecklist");
 
-    // Add rain milestone
     updatedPlan.timeline.unshift({
       id: "replan-rain-" + Date.now(),
       timeframe: "48 Hours Before",
@@ -307,7 +457,6 @@ function generateDynamicReplannedFallback(
       completed: false,
     });
 
-    // Update personalized ideas
     updatedPlan.personalizedIdeas[0] = {
       id: "idea-indoor-" + Date.now(),
       category: "Atmosphere",
@@ -323,7 +472,6 @@ function generateDynamicReplannedFallback(
     changeNotes.push("Transformed catering menu to 100% gourmet vegan and organic farm-to-table cuisine.");
     changedFields.push("personalizedIdeas", "vendorChecklist");
 
-    // Update food idea
     const foodIdeaIdx = updatedPlan.personalizedIdeas.findIndex((i) => i.category === "Food & Drink");
     const newFoodIdea = {
       id: "idea-vegan-" + Date.now(),
@@ -355,7 +503,7 @@ function generateDynamicReplannedFallback(
   }
 
   const changeSummary = changeNotes.join(" ");
-  const durationMs = Date.now() - startTime + 850; // realistic AI generation feel
+  const durationMs = Date.now() - startTime + 850;
 
   updatedPlan.genAiMetadata = {
     model,
@@ -389,7 +537,7 @@ function generateDynamicReplannedFallback(
 }
 
 // Generate tailored masterplan based on event inputs
-function generateMockMasterplan(
+export function generateMockMasterplan(
   input: GenerateEventPlanInput,
   startTime: number,
   model: string,

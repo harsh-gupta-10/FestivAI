@@ -16,8 +16,12 @@ export function SettingsModal({ isOpen, onClose, currentModel, onModelChange }: 
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("festivai_openai_key") || "";
-      setApiKey(stored);
+      const storedKey = localStorage.getItem("festivai_openai_key") || "";
+      setApiKey(storedKey);
+      const storedModel = localStorage.getItem("festivai_model");
+      if (storedModel && storedModel !== currentModel) {
+        onModelChange(storedModel);
+      }
     }
   }, [isOpen]);
 
@@ -28,11 +32,12 @@ export function SettingsModal({ isOpen, onClose, currentModel, onModelChange }: 
       } else {
         localStorage.removeItem("festivai_openai_key");
       }
+      localStorage.setItem("festivai_model", currentModel);
       setSaved(true);
       setTimeout(() => {
         setSaved(false);
         onClose();
-      }, 1000);
+      }, 900);
     }
   };
 
@@ -49,7 +54,7 @@ export function SettingsModal({ isOpen, onClose, currentModel, onModelChange }: 
             </div>
             <div>
               <h2 className="text-lg font-bold text-[#292827]">AI Engine & Cloud Settings</h2>
-              <p className="text-xs text-[#666666]">Configure models and optional direct OpenAI API key</p>
+              <p className="text-xs text-[#666666]">Configure models and API keys (OpenAI or Google Gemini)</p>
             </div>
           </div>
           <button
@@ -64,56 +69,54 @@ export function SettingsModal({ isOpen, onClose, currentModel, onModelChange }: 
           {/* AI Model Selector */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-2">
-              Default OpenAI Model
+              Select AI Reasoning Engine
             </label>
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {[
-                { id: "o3-mini", name: "o3-mini", desc: "Flagship Reasoning" },
-                { id: "gpt-4o", name: "GPT-4o", desc: "Omni Multimodal" },
-                { id: "gpt-4o-mini", name: "GPT-4o mini", desc: "Fast & Agile" },
+                { id: "o3-mini", name: "o3-mini", desc: "OpenAI Reasoning" },
+                { id: "gpt-4o", name: "GPT-4o", desc: "OpenAI Flagship" },
+                { id: "gpt-4o-mini", name: "GPT-4o mini", desc: "OpenAI Agile" },
+                { id: "gemini-2.5-flash", name: "Gemini Flash", desc: "Google Thinking" },
+                { id: "gemini-1.5-pro", name: "Gemini Pro", desc: "Google Deep Reasoning" },
               ].map((m) => (
                 <button
                   key={m.id}
                   type="button"
                   onClick={() => onModelChange(m.id)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
+                  className={`p-2.5 rounded-xl border text-left transition-all ${
                     currentModel === m.id
                       ? "bg-[#d4c7ff] border-[#292827] text-[#292827] shadow-sm font-semibold"
                       : "bg-[#f8f7f5] border-[#e3e3e2] text-[#666666] hover:text-[#292827]"
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-[#292827]">{m.name}</span>
-                    {currentModel === m.id && <Sparkles className="w-3.5 h-3.5 text-[#714cb6]" />}
+                    <span className="text-xs font-bold text-[#292827] truncate">{m.name}</span>
+                    {currentModel === m.id && <Sparkles className="w-3.5 h-3.5 text-[#714cb6] flex-shrink-0" />}
                   </div>
-                  <p className="text-[11px] text-[#666666] mt-0.5">{m.desc}</p>
+                  <p className="text-[10px] text-[#666666] mt-0.5">{m.desc}</p>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* OpenAI API Key */}
+          {/* API Key */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider text-[#666666] flex items-center">
                 <Key className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
-                OpenAI API Key (Optional)
+                API Key (OpenAI or Google Gemini)
               </label>
-              <span className="text-[11px] text-[#999999]">Stored in browser localStorage</span>
+              <span className="text-[11px] text-[#999999]">Optional client override</span>
             </div>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-proj-..."
+              placeholder="sk-... or AIza..."
               className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#e3e3e2] text-sm text-[#292827] placeholder-[#999999] focus:outline-none focus:ring-2 focus:ring-[#714cb6]/40 focus:border-[#714cb6] transition-all font-mono"
             />
             <p className="mt-1.5 text-xs text-[#666666] leading-relaxed">
-              In production, keys are stored securely in Cloudflare Worker secrets via{" "}
-              <code className="text-[#421d24] bg-[#f2f0eb] px-1.5 py-0.5 rounded border border-[#e3e3e2]">
-                npx wrangler secret put OPENAI_API_KEY
-              </code>
-              . If left blank, FestivAI operates in smart Demo Mode with realistic, mathematically consistent plans.
+              Accepts OpenAI (<code className="text-[#421d24] font-mono">sk-...</code>) or Gemini (<code className="text-[#421d24] font-mono">AIza...</code>). Can also be provided in <code className="text-[#421d24] bg-[#f2f0eb] px-1 py-0.5 rounded border border-[#e3e3e2]">.env.local</code> as <code className="font-mono">OPENAI_API_KEY</code> or <code className="font-mono">GEMINI_API_KEY</code>.
             </p>
           </div>
 
@@ -125,12 +128,12 @@ export function SettingsModal({ isOpen, onClose, currentModel, onModelChange }: 
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-[#666666]">
               <div className="p-2 rounded bg-white border border-[#e3e3e2]">
-                <span className="block font-medium text-[#292827]">Database Binding:</span>
-                <code>env.DB</code> (festivai-db D1)
+                <span className="block font-medium text-[#292827]">D1 SQLite Database:</span>
+                <code>env.DB</code> (festivai-db)
               </div>
               <div className="p-2 rounded bg-white border border-[#e3e3e2]">
-                <span className="block font-medium text-[#292827]">Storage Binding:</span>
-                <code>env.BUCKET</code> (festivai-assets R2)
+                <span className="block font-medium text-[#292827]">R2 Storage Bucket:</span>
+                <code>env.BUCKET</code> (festivai-assets)
               </div>
             </div>
           </div>

@@ -22,27 +22,33 @@ export async function POST(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    if (!guest_name || typeof guest_name !== "string" || !guest_name.trim()) {
+    const { validateEmail, sanitizeString } = await import("@/lib/validation");
+
+    const emailCheck = validateEmail(guest_email);
+    if (!emailCheck.isValid) {
+      return NextResponse.json({ error: emailCheck.error }, { status: 400 });
+    }
+
+    const cleanGuestName = sanitizeString(guest_name, 100);
+    if (!cleanGuestName) {
       return NextResponse.json({ error: "Guest name is required" }, { status: 400 });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!guest_email || !emailRegex.test(guest_email.trim())) {
-      return NextResponse.json({ error: "A valid email address is required" }, { status: 400 });
-    }
+    const cleanDietary = dietary_notes ? sanitizeString(dietary_notes, 250) : null;
+    const cleanMessage = message ? sanitizeString(message, 500) : null;
 
     const rsvpId = "rsvp_" + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
-    const parsedAttendees = Math.max(1, parseInt(attendees_count, 10) || 1);
+    const parsedAttendees = Math.min(10, Math.max(1, parseInt(attendees_count, 10) || 1));
 
     await insertRsvp({
       id: rsvpId,
       event_id: existing.event.id,
-      guest_name: guest_name.trim(),
-      guest_email: guest_email.trim().toLowerCase(),
+      guest_name: cleanGuestName,
+      guest_email: emailCheck.sanitizedValue || guest_email.trim().toLowerCase(),
       status: status === "maybe" ? "maybe" : status === "declined" ? "declined" : "going",
       attendees_count: parsedAttendees,
-      dietary_notes: dietary_notes?.trim() || null,
-      message: message?.trim() || null,
+      dietary_notes: cleanDietary,
+      message: cleanMessage,
     });
 
     const updatedRsvps = await getRsvpsForEvent(existing.event.id);

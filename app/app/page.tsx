@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { OrganizerWizard } from "@/components/OrganizerWizard";
@@ -13,6 +13,13 @@ export default function AppWorkspacePage() {
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [currentModel, setCurrentModel] = useState("o3-mini");
   const [inspectorData, setInspectorData] = useState<InspectorData | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("festivai_model");
+      if (stored) setCurrentModel(stored);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f2f0eb] text-[#292827] selection:bg-[#d4c7ff] selection:text-[#292827]">

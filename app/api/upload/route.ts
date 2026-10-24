@@ -10,18 +10,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    const contentType = file.type || "application/octet-stream";
-    if (!contentType.startsWith("image/") && !contentType.includes("pdf")) {
+    // 1. Enforce 5MB file size limit
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
       return NextResponse.json(
-        { error: "Invalid file type. Please upload an image (PNG, JPG, WebP)." },
+        { error: `File size (${(file.size / (1024 * 1024)).toFixed(2)}MB) exceeds 5MB limit.` },
+        { status: 400 }
+      );
+    }
+
+    // 2. Strict MIME whitelist (disallows SVG to prevent stored XSS)
+    const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    const contentType = file.type?.toLowerCase() || "";
+    if (!ALLOWED_MIME_TYPES.includes(contentType)) {
+      return NextResponse.json(
+        { error: "Invalid file type. Only JPEG, PNG, WebP, and GIF images are permitted for security." },
         { status: 400 }
       );
     }
 
     const { BUCKET } = await getAppBindings();
     const arrayBuffer = await file.arrayBuffer();
-    const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_").slice(0, 40);
-    const key = `banner_${Date.now()}_${cleanFileName}`;
+    // 3. Sanitize key to block directory traversal
+    const extension = contentType.split("/")[1]?.replace(/[^a-z0-9]/g, "") || "jpg";
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30);
+    const key = `covers/${Date.now()}_${cleanFileName}.${extension}`;
 
     await BUCKET.put(key, arrayBuffer, {
       httpMetadata: {

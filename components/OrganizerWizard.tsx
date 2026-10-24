@@ -211,7 +211,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(customApiKey ? { "x-openai-api-key": customApiKey } : {}),
+          ...(customApiKey ? { "x-openai-api-key": customApiKey, "x-api-key": customApiKey } : {}),
         },
         body: JSON.stringify({
           organizerName,

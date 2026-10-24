@@ -363,10 +363,12 @@ export function PublicInvite({ params }: PublicInviteProps) {
               {/* Name & Email with Live Real-Time Validation */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                  <label htmlFor="guest-name" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                     Your Full Name <span className="text-[#421d24]">*</span>
                   </label>
                   <input
+                    id="guest-name"
+                    name="guest_name"
                     type="text"
                     required
                     value={guestName}
@@ -379,7 +381,7 @@ export function PublicInvite({ params }: PublicInviteProps) {
                 {/* Email with Explicit Live Validation Badge */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-[#666666]">
+                    <label htmlFor="guest-email" className="text-xs font-semibold uppercase tracking-wider text-[#666666]">
                       Email Address <span className="text-[#421d24]">*</span>
                     </label>
                     {showEmailSuccess && (
@@ -390,8 +392,12 @@ export function PublicInvite({ params }: PublicInviteProps) {
                     )}
                   </div>
                   <input
+                    id="guest-email"
+                    name="guest_email"
                     type="email"
                     required
+                    aria-invalid={showEmailError}
+                    aria-describedby={showEmailError ? "guest-email-error" : undefined}
                     value={guestEmail}
                     onChange={(e) => {
                       setGuestEmail(e.target.value);
@@ -408,7 +414,7 @@ export function PublicInvite({ params }: PublicInviteProps) {
                     }`}
                   />
                   {showEmailError && (
-                    <p className="mt-1 text-xs text-[#421d24] flex items-center space-x-1 animate-slide-up">
+                    <p id="guest-email-error" role="alert" className="mt-1 text-xs text-[#421d24] flex items-center space-x-1 animate-slide-up">
                       <AlertTriangle className="w-3.5 h-3.5" />
                       <span>Please enter a valid email format (e.g. name@domain.com).</span>
                     </p>

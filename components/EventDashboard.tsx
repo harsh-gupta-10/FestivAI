@@ -60,6 +60,10 @@ export function EventDashboard({ params }: EventDashboardProps) {
 
   // Fetch event and plan on mount
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("festivai_model");
+      if (stored) setCurrentModel(stored);
+    }
     async function loadEvent() {
       try {
         setLoading(true);
@@ -102,6 +106,8 @@ export function EventDashboard({ params }: EventDashboardProps) {
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  const syncTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
   // Sync plan mutations to D1
   const syncPlanUpdate = async (updatedPlan: AIEventPlan) => {
     setPlan(updatedPlan);
@@ -114,6 +120,19 @@ export function EventDashboard({ params }: EventDashboardProps) {
     } catch (err) {
       console.error("Failed to sync plan update to D1:", err);
     }
+  };
+
+  // Debounced sync to prevent flooding Cloudflare D1 with rapid keystrokes
+  const debouncedSyncPlan = (updatedPlan: AIEventPlan) => {
+    setPlan(updatedPlan);
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      fetch(`/api/events/${eventId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updatedPlan }),
+      }).catch((err) => console.error("Debounced sync failed:", err));
+    }, 400);
   };
 
   // Toggle milestone completion
@@ -136,7 +155,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
     syncPlanUpdate(updatedPlan);
   };
 
-  // Inline update actualSpent for a budget category
+  // Inline update actualSpent for a budget category (debounced to save D1 write cycles)
   const handleUpdateActualSpent = (categoryId: string, newSpentStr: string) => {
     if (!plan) return;
     const val = parseFloat(newSpentStr) || 0;
@@ -144,7 +163,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
       b.id === categoryId ? { ...b, actualSpent: val } : b
     );
     const updatedPlan: AIEventPlan = { ...plan, budgetBreakdown: updatedBudget };
-    syncPlanUpdate(updatedPlan);
+    debouncedSyncPlan(updatedPlan);
   };
 
   // Execute Dynamic Re-Plan
@@ -161,7 +180,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(customApiKey ? { "x-openai-api-key": customApiKey } : {}),
+          ...(customApiKey ? { "x-openai-api-key": customApiKey, "x-api-key": customApiKey } : {}),
         },
         body: JSON.stringify({
           replanPrompt: textToRun,
