@@ -47,7 +47,7 @@ export default function AppWorkspacePage() {
         isInspectorOpen={isInspectorOpen}
       />
 
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         <OrganizerWizard
           onOpenSettings={() => setIsSettingsOpen(true)}
           selectedModel={currentModel}

@@ -312,7 +312,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
         isInspectorOpen={isInspectorOpen}
       />
 
-      <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+      <main id="main-content" className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         {/* TOP COMMAND HEADER */}
         <div className="paper-card p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
@@ -429,6 +429,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
             <div className="relative flex-1">
               <input
                 type="text"
+                aria-label="Dynamic AI Re-planning Prompt"
                 value={replanPrompt}
                 onChange={(e) => setReplanPrompt(e.target.value)}
                 placeholder="e.g. Move event indoors due to rain, cut budget by 25%, and switch menu to 100% vegan..."
@@ -696,6 +697,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
                       <span className="absolute left-2.5 top-1 text-xs text-[#999999]">{event.currency}</span>
                       <input
                         type="number"
+                        aria-label={`Actual spent amount for ${cat.category}`}
                         value={cat.actualSpent || ""}
                         placeholder="0"
                         onChange={(e) => handleUpdateActualSpent(cat.id, e.target.value)}

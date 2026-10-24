@@ -202,7 +202,7 @@ export function PublicInvite({ params }: PublicInviteProps) {
         </div>
       </nav>
 
-      <main className="flex-1 max-w-[800px] w-full mx-auto px-4 py-8 sm:py-12 space-y-8">
+      <main id="main-content" className="flex-1 max-w-[800px] w-full mx-auto px-4 py-8 sm:py-12 space-y-8">
         {/* HERO CARD WITH R2 BANNER */}
         <div className="paper-card overflow-hidden shadow-sm relative">
           {event.banner_r2_key ? (
@@ -454,10 +454,11 @@ export function PublicInvite({ params }: PublicInviteProps) {
               {status !== "declined" && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                    <label htmlFor="attendees-select" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                       Total Attendees
                     </label>
                     <select
+                      id="attendees-select"
                       value={attendeesCount}
                       onChange={(e) => setAttendeesCount(parseInt(e.target.value, 10))}
                       className="w-full px-4 py-2.5 rounded-xl bg-white border border-[#e3e3e2] text-sm text-[#292827] focus:outline-none focus:ring-2 focus:ring-[#714cb6]/40"
@@ -471,10 +472,11 @@ export function PublicInvite({ params }: PublicInviteProps) {
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                    <label htmlFor="dietary-notes" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                       Dietary Preferences / Allergies
                     </label>
                     <input
+                      id="dietary-notes"
                       type="text"
                       value={dietaryNotes}
                       onChange={(e) => setDietaryNotes(e.target.value)}
@@ -487,10 +489,11 @@ export function PublicInvite({ params }: PublicInviteProps) {
 
               {/* Personal Message */}
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                <label htmlFor="guest-message" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                   Message to Host (Optional)
                 </label>
                 <textarea
+                  id="guest-message"
                   rows={2}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}

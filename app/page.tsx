@@ -101,8 +101,9 @@ export default function MarketingLandingPage() {
         </div>
       </header>
 
-      {/* 3. CINEMATIC HERO SECTION WITH FLOATING GLASS CARDS */}
-      <section className="relative pt-12 pb-20 sm:pt-20 sm:pb-32 overflow-hidden border-b border-[#e3e3e2]">
+      <main id="main-content" className="flex-1">
+        {/* 3. CINEMATIC HERO SECTION WITH FLOATING GLASS CARDS */}
+        <section className="relative pt-12 pb-20 sm:pt-20 sm:pb-32 overflow-hidden border-b border-[#e3e3e2]">
         {/* Cinematic Backdrop Image */}
         <div className="absolute inset-0 z-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -598,6 +599,7 @@ export default function MarketingLandingPage() {
           </div>
         </div>
       </section>
+      </main>
 
       {/* 9. SITE-WIDE FOOTER (MIDNIGHT WINE #421d24) — SUPERHUMAN SPEC REQUIREMENT */}
       <footer className="w-full bg-[#421d24] text-white py-16 px-4 sm:px-6 border-t border-[#421d24]">

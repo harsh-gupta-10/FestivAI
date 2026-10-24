@@ -3,13 +3,18 @@ import { getAppBindings } from "@/lib/cloudflare";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ key: string }> }
+  { params }: { params: Promise<{ key: string[] | string }> }
 ) {
   try {
-    const { key } = await params;
-    if (!key) {
+    const rawParams = await params;
+    const keyParam = rawParams.key;
+    const rawKey = Array.isArray(keyParam) ? keyParam.join("/") : keyParam;
+    if (!rawKey) {
       return NextResponse.json({ error: "Key is required" }, { status: 400 });
     }
+
+    // Path traversal defense
+    const key = rawKey.replace(/\.\./g, "").replace(/^\/+/, "");
 
     const { BUCKET } = await getAppBindings();
     const object = await BUCKET.get(key);

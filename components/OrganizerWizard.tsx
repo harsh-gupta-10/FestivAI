@@ -305,10 +305,11 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                <label htmlFor="organizer-name" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                   Your Full Name / Couple Names <span className="text-[#421d24]">*</span>
                 </label>
                 <input
+                  id="organizer-name"
                   type="text"
                   required
                   value={organizerName}
@@ -321,7 +322,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
               {/* REAL-TIME EMAIL VALIDATION REQUIRED BY RUBRIC */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-[#666666]">
+                  <label htmlFor="organizer-email" className="text-xs font-semibold uppercase tracking-wider text-[#666666]">
                     Organizer Email <span className="text-[#421d24]">*</span>
                   </label>
                   {showEmailSuccess && (
@@ -336,8 +337,11 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                     <Mail className="w-4 h-4" />
                   </div>
                   <input
+                    id="organizer-email"
                     type="email"
                     required
+                    aria-invalid={showEmailError}
+                    aria-describedby={showEmailError ? "email-error-msg" : undefined}
                     value={organizerEmail}
                     onChange={(e) => {
                       setOrganizerEmail(e.target.value);
@@ -357,7 +361,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
 
                 {/* Visible High-Contrast Red Error Banner */}
                 {showEmailError && (
-                  <div className="mt-2 p-2.5 rounded-xl bg-[#421d24]/10 border border-[#421d24]/30 text-[#421d24] text-xs flex items-center space-x-2 animate-slide-up">
+                  <div id="email-error-msg" role="alert" aria-live="polite" className="mt-2 p-2.5 rounded-xl bg-[#421d24]/10 border border-[#421d24]/30 text-[#421d24] text-xs flex items-center space-x-2 animate-slide-up">
                     <AlertTriangle className="w-4 h-4 text-[#421d24] flex-shrink-0" />
                     <span>
                       <strong>Invalid Email Format:</strong> &quot;{organizerEmail}&quot; is not a valid email. Please enter a valid address such as <code>john@example.com</code>.
@@ -413,10 +417,11 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
             {/* Title & Location */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                <label htmlFor="event-title" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                   Event Title <span className="text-[#421d24]">*</span>
                 </label>
                 <input
+                  id="event-title"
                   type="text"
                   required
                   value={title}
@@ -427,7 +432,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                <label htmlFor="event-location" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                   Venue / Location <span className="text-[#421d24]">*</span>
                 </label>
                 <div className="relative">
@@ -435,6 +440,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                     <MapPin className="w-4 h-4" />
                   </div>
                   <input
+                    id="event-location"
                     type="text"
                     required
                     value={location}
@@ -449,7 +455,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
             {/* Date & Guests with Real-time Validation */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                <label htmlFor="event-date" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                   Event Date <span className="text-[#421d24]">*</span>
                 </label>
                 <div className="relative">
@@ -457,9 +463,12 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                     <Calendar className="w-4 h-4" />
                   </div>
                   <input
+                    id="event-date"
                     type="date"
                     required
                     min={todayStr}
+                    aria-invalid={showDateError}
+                    aria-describedby={showDateError ? "date-error-msg" : undefined}
                     value={eventDate}
                     onChange={(e) => {
                       setEventDate(e.target.value);
@@ -474,7 +483,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                   />
                 </div>
                 {showDateError && (
-                  <p className="mt-1 text-xs text-[#421d24] flex items-center space-x-1 animate-slide-up">
+                  <p id="date-error-msg" role="alert" aria-live="polite" className="mt-1 text-xs text-[#421d24] flex items-center space-x-1 animate-slide-up">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     <span>Selected date cannot be in the past.</span>
                   </p>
@@ -482,7 +491,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                <label htmlFor="guest-count" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                   Expected Guest Count <span className="text-[#421d24]">*</span>
                 </label>
                 <div className="relative">
@@ -490,8 +499,11 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                     <Users className="w-4 h-4" />
                   </div>
                   <input
+                    id="guest-count"
                     type="number"
                     required
+                    aria-invalid={showGuestsError}
+                    aria-describedby={showGuestsError ? "guests-error-msg" : undefined}
                     value={guestCount}
                     onChange={(e) => {
                       setGuestCount(e.target.value);
@@ -507,7 +519,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                   />
                 </div>
                 {showGuestsError && (
-                  <p className="mt-1 text-xs text-[#421d24] flex items-center space-x-1 animate-slide-up">
+                  <p id="guests-error-msg" role="alert" aria-live="polite" className="mt-1 text-xs text-[#421d24] flex items-center space-x-1 animate-slide-up">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     <span>Guest count must be greater than 0.</span>
                   </p>
@@ -528,10 +540,11 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Currency */}
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+                <label htmlFor="currency-select" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                   Currency
                 </label>
                 <select
+                  id="currency-select"
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl bg-white border border-[#e3e3e2] text-[#292827] text-sm focus:outline-none focus:ring-2 focus:ring-[#714cb6]/40"
@@ -548,7 +561,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
               {/* Total Budget Input with LIVE EDGE CASE VALIDATION */}
               <div className="sm:col-span-2">
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-[#666666]">
+                  <label htmlFor="total-budget" className="text-xs font-semibold uppercase tracking-wider text-[#666666]">
                     Total Estimated Budget <span className="text-[#421d24]">*</span>
                   </label>
                   {isBudgetValid && budgetInteracted && (
@@ -563,9 +576,12 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                     <DollarSign className="w-4 h-4" />
                   </div>
                   <input
+                    id="total-budget"
                     type="number"
                     step="any"
                     required
+                    aria-invalid={showBudgetError}
+                    aria-describedby={showBudgetError ? "budget-error-msg" : undefined}
                     value={totalBudget}
                     onChange={(e) => {
                       setTotalBudget(e.target.value);
@@ -583,7 +599,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
 
                 {/* HIGH-CONTRAST BUDGET EDGE-CASE ALERT WITH AUTO-FIX BUTTON */}
                 {showBudgetError && (
-                  <div className="mt-2.5 p-3.5 rounded-2xl bg-[#421d24]/10 border border-[#421d24]/30 text-[#421d24] text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-slide-up">
+                  <div id="budget-error-msg" role="alert" aria-live="polite" className="mt-2.5 p-3.5 rounded-2xl bg-[#421d24]/10 border border-[#421d24]/30 text-[#421d24] text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-slide-up">
                     <div className="flex items-start space-x-2.5">
                       <ShieldAlert className="w-5 h-5 text-[#421d24] flex-shrink-0 mt-0.5" />
                       <div>
@@ -647,7 +663,9 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                 ))}
               </div>
               <input
+                id="vibe-custom-input"
                 type="text"
+                aria-label="Custom aesthetic description"
                 value={vibe}
                 onChange={(e) => setVibe(e.target.value)}
                 placeholder="Or type a custom vibe description..."
@@ -657,7 +675,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
 
             {/* Cloudflare R2 Banner Uploader */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
+              <label htmlFor="banner-file-input" className="block text-xs font-semibold uppercase tracking-wider text-[#666666] mb-1.5">
                 Event Cover Banner (Stored in Cloudflare R2 Bucket: <code className="text-[#714cb6] font-mono text-[11px]">festivai-assets</code>)
               </label>
 
@@ -666,9 +684,9 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={bannerPreview} alt="Banner preview" className="w-full h-48 object-cover" />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <label className="cursor-pointer px-4 py-2 rounded-xl bg-[#421d24] hover:bg-[#572730] text-white text-xs font-bold transition-colors">
+                    <label htmlFor="banner-file-input" className="cursor-pointer px-4 py-2 rounded-xl bg-[#421d24] hover:bg-[#572730] text-white text-xs font-bold transition-colors">
                       Change R2 Banner
-                      <input type="file" accept="image/*" onChange={handleBannerUpload} className="hidden" />
+                      <input id="banner-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" aria-label="Upload event banner image" onChange={handleBannerUpload} className="hidden" />
                     </label>
                   </div>
                   <div className="absolute bottom-2 left-2 px-2.5 py-1 rounded-lg bg-white/90 backdrop-blur-sm border border-[#e3e3e2] text-[11px] text-[#292827] font-mono font-bold">
@@ -676,7 +694,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                   </div>
                 </div>
               ) : (
-                <label className="flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-[#e3e3e2] hover:border-[#714cb6] bg-[#f8f7f5] hover:bg-white cursor-pointer transition-all">
+                <label htmlFor="banner-file-input" className="flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-[#e3e3e2] hover:border-[#714cb6] bg-[#f8f7f5] hover:bg-white cursor-pointer transition-all">
                   <div className="p-3 rounded-full bg-white border border-[#e3e3e2] mb-2 shadow-sm">
                     {isUploadingBanner ? (
                       <div className="w-5 h-5 border-2 border-[#714cb6] border-t-transparent rounded-full animate-spin" />
@@ -690,7 +708,7 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
                   <span className="text-[11px] text-[#666666] mt-0.5">
                     Optional: AI will auto-theme the microsite palette even without an image
                   </span>
-                  <input type="file" accept="image/*" onChange={handleBannerUpload} className="hidden" />
+                  <input id="banner-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" aria-label="Upload event banner image" onChange={handleBannerUpload} className="hidden" />
                 </label>
               )}
             </div>
