@@ -13,6 +13,7 @@
 # OpenNext & Cloudflare
 /.open-next/
 /.wrangler/
+/.config/
 
 # Production
 /build
