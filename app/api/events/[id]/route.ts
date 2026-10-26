@@ -29,23 +29,63 @@ export async function GET(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    const rsvps = await getRsvpsForEvent(data.event.id);
+    const requestEmail = (
+      req.headers.get("x-user-email") ||
+      req.nextUrl.searchParams.get("email") ||
+      ""
+    ).trim().toLowerCase();
 
-    let chatHistory: any[] = [];
-    if (data.event.chat_history_json) {
-      try {
-        chatHistory = JSON.parse(data.event.chat_history_json);
-      } catch {
-        chatHistory = [];
+    const ownerEmail = (data.event.organizer_email || "").trim().toLowerCase();
+    const isOwner = Boolean(ownerEmail && requestEmail && requestEmail === ownerEmail);
+
+    const rsvps = await getRsvpsForEvent(data.event.id);
+    const confirmedGuestsCount = rsvps
+      .filter((r) => r.status === "going")
+      .reduce((acc, r) => acc + (r.attendees_count || 1), 0);
+
+    // If requester is verified owner, return full private dashboard details
+    if (isOwner) {
+      let chatHistory: any[] = [];
+      if (data.event.chat_history_json) {
+        try {
+          chatHistory = JSON.parse(data.event.chat_history_json);
+        } catch {
+          chatHistory = [];
+        }
       }
+
+      return NextResponse.json({
+        success: true,
+        isOwner: true,
+        event: data.event,
+        plan: data.plan,
+        rsvps,
+        chatHistory,
+        confirmedGuestsCount,
+      });
     }
 
+    // Otherwise, for all guests and unauthenticated visitors: return strictly sanitized public invitation data
     return NextResponse.json({
       success: true,
-      event: data.event,
-      plan: data.plan,
-      rsvps,
-      chatHistory,
+      isOwner: false,
+      event: {
+        id: data.event.id,
+        slug: data.event.slug,
+        title: data.event.title,
+        event_type: data.event.event_type,
+        event_date: data.event.event_date,
+        location: data.event.location,
+        vibe: data.event.vibe,
+        banner_r2_key: data.event.banner_r2_key,
+        organizer_name: data.event.organizer_name,
+        guest_count: data.event.guest_count,
+      },
+      plan: {
+        eventSummary: data.plan?.eventSummary,
+        publicSchedule: data.plan?.publicSchedule,
+      },
+      confirmedGuestsCount,
     });
   } catch (error: any) {
     console.error("GET /api/events/[id] error:", error);
@@ -67,13 +107,16 @@ export async function PATCH(
     }
 
     // Authorization & IDOR protection: Verify ownership if organizer email is recorded
-    const requestEmail =
-      req.headers.get("x-user-email") || body.userEmail || body.organizer_email;
+    const requestEmail = (
+      req.headers.get("x-user-email") ||
+      body.userEmail ||
+      body.organizer_email ||
+      ""
+    ).trim().toLowerCase();
     const existingOwner = (existing.event.organizer_email || "").trim().toLowerCase();
 
-    if (existingOwner && requestEmail) {
-      const normalizedRequestEmail = requestEmail.trim().toLowerCase();
-      if (normalizedRequestEmail !== existingOwner) {
+    if (existingOwner) {
+      if (!requestEmail || requestEmail !== existingOwner) {
         return NextResponse.json(
           { error: "Forbidden: You do not have permission to modify this celebration." },
           { status: 403 }
@@ -210,14 +253,16 @@ export async function DELETE(
     }
 
     const { searchParams } = new URL(req.url);
-    const requestEmail =
-      req.headers.get("x-user-email") || searchParams.get("email") || undefined;
+    const requestEmail = (
+      req.headers.get("x-user-email") ||
+      searchParams.get("email") ||
+      ""
+    ).trim().toLowerCase();
     const existingOwner = (existing.event.organizer_email || "").trim().toLowerCase();
 
     // Verify ownership
-    if (existingOwner && requestEmail) {
-      const normalizedRequestEmail = requestEmail.trim().toLowerCase();
-      if (normalizedRequestEmail !== existingOwner) {
+    if (existingOwner) {
+      if (!requestEmail || requestEmail !== existingOwner) {
         return NextResponse.json(
           { error: "Forbidden: You do not have permission to delete this celebration." },
           { status: 403 }

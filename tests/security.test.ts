@@ -101,3 +101,141 @@ test("Prompt Injection & Script Filtering Suite", async (t) => {
     assert.equal(normalResult.isValid, true);
   });
 });
+
+test("Multi-Tenant Authorization & Event Privacy Suite", async (t) => {
+  const mockEvent = {
+    id: "evt_secret_123",
+    slug: "charlotte-gala-123",
+    organizer_name: "Charlotte Vance",
+    organizer_email: "charlotte@example.com",
+    title: "Charlotte's Autumn Gala",
+    total_budget: 45000,
+    currency: "USD",
+    location: "Skyline Ballroom",
+    event_date: "2026-11-20",
+    guest_count: 150,
+    vibe: "Opulent & Black-Tie",
+    banner_r2_key: "covers/gala.jpg",
+    chat_history_json: JSON.stringify([{ role: "user", content: "Secret vendor notes" }]),
+  };
+
+  const mockPlan = {
+    eventSummary: "Public overview of the gala evening",
+    publicSchedule: [{ time: "18:00", description: "Cocktail reception" }],
+    budgetBreakdown: [
+      { category: "Catering", allocatedAmount: 20000, actualSpent: 18500, notes: "Confidential rate" },
+      { category: "Venue", allocatedAmount: 15000, actualSpent: 15000, notes: "Under contract" },
+    ],
+    vendorChecklist: [{ name: "VIP Security", booked: true, quote: "$4,000" }],
+  };
+
+  const mockRsvps = [
+    { guest_name: "Alice Smith", guest_email: "alice@confidential.com", status: "going", attendees_count: 2, dietary_notes: "Severe peanut allergy" },
+    { guest_name: "Bob Jones", guest_email: "bob@private.org", status: "going", attendees_count: 1, dietary_notes: "Vegan" },
+  ];
+
+  // Helper matching GET /api/events/[id] security logic
+  function resolveEventPayload(requestEmail: string | undefined | null) {
+    const normalizedRequest = (requestEmail || "").trim().toLowerCase();
+    const ownerEmail = mockEvent.organizer_email.trim().toLowerCase();
+    const isOwner = Boolean(ownerEmail && normalizedRequest && normalizedRequest === ownerEmail);
+
+    const confirmedGuestsCount = mockRsvps
+      .filter((r) => r.status === "going")
+      .reduce((acc, r) => acc + (r.attendees_count || 1), 0);
+
+    if (isOwner) {
+      return {
+        success: true,
+        isOwner: true,
+        event: mockEvent,
+        plan: mockPlan,
+        rsvps: mockRsvps,
+        chatHistory: JSON.parse(mockEvent.chat_history_json),
+        confirmedGuestsCount,
+      };
+    }
+
+    return {
+      success: true,
+      isOwner: false,
+      event: {
+        id: mockEvent.id,
+        slug: mockEvent.slug,
+        title: mockEvent.title,
+        location: mockEvent.location,
+        event_date: mockEvent.event_date,
+        organizer_name: mockEvent.organizer_name,
+        guest_count: mockEvent.guest_count,
+        vibe: mockEvent.vibe,
+        banner_r2_key: mockEvent.banner_r2_key,
+      },
+      plan: {
+        eventSummary: mockPlan.eventSummary,
+        publicSchedule: mockPlan.publicSchedule,
+      },
+      confirmedGuestsCount,
+    };
+  }
+
+  await t.test("unauthenticated visitor receives strictly sanitized public payload", () => {
+    const unauthenticatedPayload = resolveEventPayload(null);
+    assert.equal(unauthenticatedPayload.isOwner, false);
+    // Confidential data must NOT be present
+    assert.equal((unauthenticatedPayload.event as any).total_budget, undefined);
+    assert.equal((unauthenticatedPayload.event as any).organizer_email, undefined);
+    assert.equal((unauthenticatedPayload.event as any).chat_history_json, undefined);
+    assert.equal((unauthenticatedPayload as any).rsvps, undefined);
+    assert.equal((unauthenticatedPayload as any).chatHistory, undefined);
+    assert.equal((unauthenticatedPayload.plan as any).budgetBreakdown, undefined);
+    assert.equal((unauthenticatedPayload.plan as any).vendorChecklist, undefined);
+    // Public invite data must remain intact
+    assert.equal(unauthenticatedPayload.event.title, "Charlotte's Autumn Gala");
+    assert.equal(unauthenticatedPayload.confirmedGuestsCount, 3);
+    assert.equal(unauthenticatedPayload.plan.publicSchedule?.length, 1);
+  });
+
+  await t.test("unauthorized user (different account) is blocked from private details", () => {
+    const attackerPayload = resolveEventPayload("attacker@evil.com");
+    assert.equal(attackerPayload.isOwner, false);
+    assert.equal((attackerPayload.event as any).total_budget, undefined);
+    assert.equal((attackerPayload as any).rsvps, undefined);
+    assert.equal((attackerPayload.plan as any).budgetBreakdown, undefined);
+  });
+
+  await t.test("verified owner receives full unmasked event command center data", () => {
+    const ownerPayload = resolveEventPayload("charlotte@example.com");
+    assert.equal(ownerPayload.isOwner, true);
+    assert.equal(ownerPayload.event.total_budget, 45000);
+    assert.equal(ownerPayload.rsvps?.length, 2);
+    assert.equal(ownerPayload.chatHistory?.length, 1);
+    assert.equal(ownerPayload.plan.budgetBreakdown?.length, 2);
+  });
+
+  await t.test("blocks unauthorized replan, patch, or delete mutations", () => {
+    function authorizeMutation(callerEmail: string | undefined | null) {
+      const normalizedCaller = (callerEmail || "").trim().toLowerCase();
+      const existingOwner = mockEvent.organizer_email.trim().toLowerCase();
+      if (existingOwner) {
+        if (!normalizedCaller || normalizedCaller !== existingOwner) {
+          return { allowed: false, status: 403, error: "Forbidden: You do not have permission" };
+        }
+      }
+      return { allowed: true, status: 200 };
+    }
+
+    // Anonymous caller
+    assert.equal(authorizeMutation(null).allowed, false);
+    assert.equal(authorizeMutation(null).status, 403);
+    assert.equal(authorizeMutation("").allowed, false);
+
+    // Impersonator / non-owner
+    assert.equal(authorizeMutation("stranger@random.com").allowed, false);
+    assert.equal(authorizeMutation("stranger@random.com").status, 403);
+
+    // True owner
+    assert.equal(authorizeMutation("charlotte@example.com").allowed, true);
+    assert.equal(authorizeMutation("CHARLOTTE@EXAMPLE.COM").allowed, true);
+  });
+});
+

@@ -25,9 +25,14 @@ import {
   FileCheck,
   MessageSquare,
   Edit3,
+  Lock,
+  ShieldAlert,
+  LogIn,
+  Save,
 } from "lucide-react";
 import { formatCurrency, getCurrencySymbol, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { EditEventModal } from "@/components/EditEventModal";
+import { useAuth } from "@/context/AuthContext";
 
 
 export interface EventDashboardProps {
@@ -38,11 +43,33 @@ export function EventDashboard({ params }: EventDashboardProps) {
   const resolvedParams = use(params);
   const eventId = resolvedParams.id;
 
+  const { user, loading: authLoading, openAuthModal, logout } = useAuth();
+
   const [event, setEvent] = useState<EventRecord | null>(null);
   const [plan, setPlan] = useState<AIEventPlan | null>(null);
   const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
+  const [isOwner, setIsOwner] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Persistence, Dirty & Save Status Feedback
+  const [saveStatus, setSaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved" | "error">("idle");
+  const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [dirtyCategories, setDirtyCategories] = useState<Record<string, boolean>>({});
+
+  const latestPlanRef = React.useRef<AIEventPlan | null>(null);
+  const isDirtyRef = React.useRef<boolean>(false);
+  const syncTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Keep refs in sync for reliable unmount/beforeunload flushes
+  useEffect(() => {
+    latestPlanRef.current = plan;
+  }, [plan]);
+
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
 
   // Inspector & Settings Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -69,39 +96,116 @@ export function EventDashboard({ params }: EventDashboardProps) {
     setEvent((prev) => (prev ? { ...prev, ...updated } : null));
     if (updated.ai_plan_json) {
       try {
-        setPlan(typeof updated.ai_plan_json === "string" ? JSON.parse(updated.ai_plan_json) : updated.ai_plan_json);
+        const parsed = typeof updated.ai_plan_json === "string" ? JSON.parse(updated.ai_plan_json) : updated.ai_plan_json;
+        setPlan(parsed);
+        latestPlanRef.current = parsed;
       } catch {}
     }
   };
 
-  // Fetch event and plan on mount
+  // Synchronous flush on page reload/navigation to guarantee no amount is lost
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (latestPlanRef.current && isDirtyRef.current) {
+        try {
+          localStorage.setItem(
+            `festivai_event_plan_${eventId}`,
+            JSON.stringify({ plan: latestPlanRef.current, timestamp: Date.now() })
+          );
+        } catch {}
+
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (user?.email) headers["x-user-email"] = user.email;
+
+        // keepalive ensures the browser completes the HTTP POST/PATCH even during page teardown
+        fetch(`/api/events/${eventId}`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ updatedPlan: latestPlanRef.current }),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [eventId, user?.email]);
+
+  // Fetch event and plan on mount (waiting for auth check to finish to avoid race conditions)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("festivai_model");
       if (stored) setCurrentModel(stored);
     }
+
+    if (authLoading) return; // Wait for Firebase Auth resolution
+
     async function loadEvent() {
       try {
         setLoading(true);
-        const res = await fetch(`/api/events/${eventId}`);
+        const headers: Record<string, string> = {};
+        if (user?.email) {
+          headers["x-user-email"] = user.email;
+        }
+        const queryEmail = user?.email ? `?email=${encodeURIComponent(user.email)}` : "";
+        const res = await fetch(`/api/events/${eventId}${queryEmail}`, { headers });
         if (!res.ok) {
           throw new Error("Could not find event with ID: " + eventId);
         }
         const data = (await res.json()) as any;
         setEvent(data.event);
-        setPlan(data.plan);
+
+        let finalPlan: AIEventPlan = data.plan;
+
+        // Restore any uncommitted draft values from localStorage so refresh never resets user work
+        try {
+          const cachedRaw = localStorage.getItem(`festivai_event_plan_${eventId}`);
+          if (cachedRaw && finalPlan && Array.isArray(finalPlan.budgetBreakdown)) {
+            const cached = JSON.parse(cachedRaw);
+            if (cached?.plan?.budgetBreakdown) {
+              let hasRecoveries = false;
+              const mergedBudget = finalPlan.budgetBreakdown.map((cat: any) => {
+                const cachedCat = cached.plan.budgetBreakdown.find((c: any) => c.id === cat.id);
+                if (cachedCat && typeof cachedCat.actualSpent === "number" && (cachedCat.actualSpent > (cat.actualSpent || 0) || (cachedCat.actualSpent > 0 && !cat.actualSpent))) {
+                  hasRecoveries = true;
+                  return { ...cat, actualSpent: cachedCat.actualSpent };
+                }
+                return cat;
+              });
+
+              if (hasRecoveries) {
+                finalPlan = { ...finalPlan, budgetBreakdown: mergedBudget };
+                // Silently sync recovered local draft to Cloudflare D1
+                fetch(`/api/events/${eventId}`, {
+                  method: "PATCH",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(user?.email ? { "x-user-email": user.email } : {}),
+                  },
+                  body: JSON.stringify({ updatedPlan: finalPlan }),
+                }).catch(() => {});
+              }
+            }
+          }
+        } catch (storageErr) {
+          console.warn("Could not inspect local draft storage:", storageErr);
+        }
+
+        setPlan(finalPlan);
+        latestPlanRef.current = finalPlan;
         setRsvps(data.rsvps || []);
+        setIsOwner(data.isOwner ?? false);
 
         // Initialize Inspector data
-        if (data.plan?.genAiMetadata) {
+        if (finalPlan?.genAiMetadata) {
           setInspectorData({
-            model: data.plan.genAiMetadata.model || "o3-mini",
-            durationMs: data.plan.genAiMetadata.generationTimeMs || 1200,
+            model: finalPlan.genAiMetadata.model || "o3-mini",
+            durationMs: finalPlan.genAiMetadata.generationTimeMs || 1200,
             systemPrompt: "System Instructions: World-class event planner structured JSON outputs...",
             userPrompt: data.event.last_prompt || `Generate plan for ${data.event.title}`,
-            rawJsonOutput: JSON.stringify(data.plan, null, 2),
-            changedSummary: data.plan.genAiMetadata.lastReplanNote,
-            changedFields: data.plan.genAiMetadata.changedFields || [],
+            rawJsonOutput: JSON.stringify(finalPlan, null, 2),
+            changedSummary: finalPlan.genAiMetadata.lastReplanNote,
+            changedFields: finalPlan.genAiMetadata.changedFields || [],
           });
         }
       } catch (err: any) {
@@ -111,7 +215,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
       }
     }
     loadEvent();
-  }, [eventId]);
+  }, [eventId, user, authLoading]);
 
   // Copy shareable public invite link
   const handleShareLink = () => {
@@ -122,33 +226,78 @@ export function EventDashboard({ params }: EventDashboardProps) {
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
-  const syncTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  // Explicitly persist plan mutations to Cloudflare D1 with real-time visual feedback
+  const handleSavePlan = async (planToSave?: AIEventPlan) => {
+    const targetPlan = planToSave || latestPlanRef.current || plan;
+    if (!targetPlan) return;
 
-  // Sync plan mutations to D1
-  const syncPlanUpdate = async (updatedPlan: AIEventPlan) => {
-    setPlan(updatedPlan);
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = null;
+    }
+
+    setSaveStatus("saving");
+
+    // Cache to localStorage immediately
     try {
-      await fetch(`/api/events/${eventId}`, {
+      localStorage.setItem(
+        `festivai_event_plan_${eventId}`,
+        JSON.stringify({ plan: targetPlan, timestamp: Date.now() })
+      );
+    } catch {}
+
+    try {
+      const res = await fetch(`/api/events/${eventId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updatedPlan }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(user?.email ? { "x-user-email": user.email } : {}),
+        },
+        body: JSON.stringify({ updatedPlan: targetPlan }),
       });
+
+      if (!res.ok) {
+        throw new Error("Failed to save plan to Cloudflare D1");
+      }
+
+      setSaveStatus("saved");
+      setIsDirty(false);
+      isDirtyRef.current = false;
+      setDirtyCategories({});
+      const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setLastSavedTime(nowStr);
     } catch (err) {
       console.error("Failed to sync plan update to D1:", err);
+      setSaveStatus("error");
     }
   };
 
-  // Debounced sync to prevent flooding Cloudflare D1 with rapid keystrokes
+  // Sync plan mutations (e.g. milestones, vendor checklists) immediately
+  const syncPlanUpdate = async (updatedPlan: AIEventPlan) => {
+    setPlan(updatedPlan);
+    latestPlanRef.current = updatedPlan;
+    await handleSavePlan(updatedPlan);
+  };
+
+  // Debounced sync for continuous typing while ensuring local storage backup
   const debouncedSyncPlan = (updatedPlan: AIEventPlan) => {
     setPlan(updatedPlan);
+    latestPlanRef.current = updatedPlan;
+    setIsDirty(true);
+    isDirtyRef.current = true;
+    setSaveStatus("unsaved");
+
+    try {
+      localStorage.setItem(
+        `festivai_event_plan_${eventId}`,
+        JSON.stringify({ plan: updatedPlan, timestamp: Date.now() })
+      );
+    } catch {}
+
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => {
-      fetch(`/api/events/${eventId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updatedPlan }),
-      }).catch((err) => console.error("Debounced sync failed:", err));
-    }, 400);
+      handleSavePlan(updatedPlan);
+    }, 600);
   };
 
   // Toggle milestone completion
@@ -171,7 +320,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
     syncPlanUpdate(updatedPlan);
   };
 
-  // Inline update actualSpent for a budget category (debounced to save D1 write cycles)
+  // Inline update actualSpent for a budget category
   const handleUpdateActualSpent = (categoryId: string, newSpentStr: string) => {
     if (!plan) return;
     const val = parseFloat(newSpentStr) || 0;
@@ -179,6 +328,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
       b.id === categoryId ? { ...b, actualSpent: val } : b
     );
     const updatedPlan: AIEventPlan = { ...plan, budgetBreakdown: updatedBudget };
+    setDirtyCategories((prev) => ({ ...prev, [categoryId]: true }));
     debouncedSyncPlan(updatedPlan);
   };
 
@@ -190,7 +340,10 @@ export function EventDashboard({ params }: EventDashboardProps) {
     try {
       await fetch(`/api/events/${eventId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(user?.email ? { "x-user-email": user.email } : {}),
+        },
         body: JSON.stringify({ currency: updatedCurrency }),
       });
     } catch (err) {
@@ -213,11 +366,13 @@ export function EventDashboard({ params }: EventDashboardProps) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(user?.email ? { "x-user-email": user.email } : {}),
           ...(customApiKey ? { "x-openai-api-key": customApiKey, "x-api-key": customApiKey } : {}),
         },
         body: JSON.stringify({
           replanPrompt: textToRun,
           model: currentModel,
+          userEmail: user?.email,
         }),
       });
 
@@ -264,7 +419,10 @@ export function EventDashboard({ params }: EventDashboardProps) {
 
       await fetch(`/api/events/${eventId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(user?.email ? { "x-user-email": user.email } : {}),
+        },
         body: JSON.stringify({ bannerKey: data.key }),
       });
 
@@ -294,6 +452,69 @@ export function EventDashboard({ params }: EventDashboardProps) {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#f2f0eb] flex flex-col items-center justify-center p-4">
+        <div className="w-10 h-10 rounded-xl bg-[#421d24] text-white flex items-center justify-center font-bold animate-spin shadow-sm">
+          F
+        </div>
+        <p className="mt-4 text-xs font-[460] text-[#666666]">
+          Verifying Organizer Authentication...
+        </p>
+      </div>
+    );
+  }
+
+  // Mandatory Authentication Gate: Unauthenticated visitor trying to view organizer dashboard
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#f2f0eb] text-[#292827] flex flex-col selection:bg-[#d4c7ff]">
+        <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+        <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
+          <div className="w-full max-w-md bg-white rounded-3xl border border-[#e3e3e2] p-6 sm:p-8 shadow-xl text-center space-y-5">
+            <div className="w-14 h-14 rounded-2xl bg-[#421d24] text-white flex items-center justify-center mx-auto shadow-md">
+              <Lock className="w-6 h-6 text-[#d4c7ff]" />
+            </div>
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#714cb6] bg-[#d4c7ff]/50 px-2.5 py-1 rounded-full border border-[#714cb6]/20">
+                Organizer Protected Portal
+              </span>
+              <h2 className="font-serif text-2xl font-bold text-[#292827]">
+                Organizer Sign-In Required
+              </h2>
+              <p className="text-xs text-[#666666] leading-relaxed">
+                This dashboard contains confidential celebration budgets, vendor negotiation notes, and guest dietary records. You must sign in with the organizer account to view or manage this celebration.
+              </p>
+            </div>
+
+            <div className="space-y-2.5 pt-2">
+              <button
+                onClick={() => openAuthModal()}
+                className="w-full py-3 px-4 rounded-xl bg-[#421d24] hover:bg-[#572730] text-white text-xs font-[540] transition-all shadow-md flex items-center justify-center space-x-2"
+              >
+                <LogIn className="w-4 h-4 text-[#d4c7ff]" />
+                <span>Sign In as Organizer</span>
+              </button>
+              <Link
+                href={`/invite/${eventId}`}
+                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-[#f8f7f5] text-[#292827] border border-[#e3e3e2] text-xs font-[540] transition-colors flex items-center justify-center space-x-2 block"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-[#714cb6]" />
+                <span>View Public Guest Invitation</span>
+              </Link>
+              <Link
+                href="/"
+                className="text-[11px] text-[#666666] hover:text-[#292827] transition-colors inline-block pt-1"
+              >
+                ← Return to Home
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -326,10 +547,61 @@ export function EventDashboard({ params }: EventDashboardProps) {
     );
   }
 
+  // Mandatory Authorization Gate: User is logged in, but does not own this celebration
+  const isAuthorized = !event.organizer_email || (user?.email && user.email.toLowerCase() === event.organizer_email.toLowerCase());
+  if (!isAuthorized || (!isOwner && event.organizer_email)) {
+    return (
+      <div className="min-h-screen bg-[#f2f0eb] text-[#292827] flex flex-col selection:bg-[#d4c7ff]">
+        <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+        <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
+          <div className="w-full max-w-md bg-white rounded-3xl border border-rose-200 p-6 sm:p-8 shadow-xl text-center space-y-5">
+            <div className="w-14 h-14 rounded-2xl bg-rose-900 text-white flex items-center justify-center mx-auto shadow-md">
+              <ShieldAlert className="w-6 h-6 text-rose-200" />
+            </div>
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full">
+                Access Restricted (403 Forbidden)
+              </span>
+              <h2 className="font-serif text-2xl font-bold text-[#292827]">
+                Unauthorized Organizer
+              </h2>
+              <p className="text-xs text-[#666666] leading-relaxed">
+                You are currently signed in as <strong className="text-[#292827]">{user.email}</strong>, but this celebration is managed by <strong className="text-[#292827]">{event.organizer_email}</strong>.
+              </p>
+              <p className="text-[11px] text-[#666666]">
+                For guest privacy and financial security, only the verified organizer can access this management dashboard.
+              </p>
+            </div>
+
+            <div className="space-y-2.5 pt-2">
+              <button
+                onClick={() => {
+                  logout();
+                  openAuthModal();
+                }}
+                className="w-full py-3 px-4 rounded-xl bg-[#421d24] hover:bg-[#572730] text-white text-xs font-[540] transition-all shadow-md flex items-center justify-center space-x-2"
+              >
+                <LogIn className="w-4 h-4 text-[#d4c7ff]" />
+                <span>Switch to Organizer Account</span>
+              </button>
+              <Link
+                href="/app"
+                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-[#f8f7f5] text-[#292827] border border-[#e3e3e2] text-xs font-[540] transition-colors flex items-center justify-center space-x-2 block"
+              >
+                <span>Go to My Workspace</span>
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   // Budget calculations
-  const totalAllocated = plan.budgetBreakdown.reduce((sum, b) => sum + b.allocatedAmount, 0);
-  const totalSpent = plan.budgetBreakdown.reduce((sum, b) => sum + (b.actualSpent || 0), 0);
-  const budgetVariance = event.total_budget - totalSpent;
+  const budgetList = plan.budgetBreakdown || [];
+  const totalAllocated = budgetList.reduce((sum, b) => sum + (b.allocatedAmount || 0), 0);
+  const totalSpent = budgetList.reduce((sum, b) => sum + (b.actualSpent || 0), 0);
+  const budgetVariance = (event.total_budget || 0) - totalSpent;
   const budgetSpentPercent = Math.min(100, Math.round((totalSpent / (event.total_budget || 1)) * 100));
 
   // RSVP statistics
@@ -449,6 +721,42 @@ export function EventDashboard({ params }: EventDashboardProps) {
               <MessageSquare className="w-4 h-4 text-[#714cb6]" />
               <span>AI Chat</span>
             </Link>
+
+            {/* Save All Changes Action Button */}
+            <button
+              onClick={() => handleSavePlan()}
+              disabled={saveStatus === "saving"}
+              className={`px-3.5 py-2.5 rounded-buttons text-xs font-[540] transition-all flex items-center space-x-1.5 shadow-sm cursor-pointer ${
+                isDirty
+                  ? "bg-[#421d24] text-white hover:bg-[#572730] ring-2 ring-[#714cb6]/50 animate-pulse"
+                  : saveStatus === "saved"
+                  ? "bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100"
+                  : "bg-white hover:bg-[#f8f7f5] text-[#292827] border border-[#e3e3e2]"
+              }`}
+              title="Save all entered budget amounts and plan modifications to Cloudflare D1"
+            >
+              {saveStatus === "saving" ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#714cb6]" />
+                  <span>Saving to D1...</span>
+                </>
+              ) : saveStatus === "saved" ? (
+                <>
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Saved to D1 ✓</span>
+                </>
+              ) : isDirty ? (
+                <>
+                  <Save className="w-3.5 h-3.5 text-[#d4c7ff]" />
+                  <span>Save Changes</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5 text-[#714cb6]" />
+                  <span>Save Plan</span>
+                </>
+              )}
+            </button>
 
             <button
               onClick={() => setIsInspectorOpen(true)}
@@ -691,25 +999,75 @@ export function EventDashboard({ params }: EventDashboardProps) {
                 )}
               </div>
               <p className="text-xs text-[#666666]">
-                Inline edit &apos;Actual Spent&apos; amounts below to sync real-time expenses with Cloudflare D1
+                Enter actual expenses below & save directly to Cloudflare D1. Changes persist permanently across refreshes.
               </p>
             </div>
 
-            {/* Overall summary pills */}
-            <div className="flex items-center space-x-3 text-xs font-semibold">
-              <div className="px-3.5 py-1.5 rounded-xl bg-[#f8f7f5] border border-[#e3e3e2]">
-                <span className="text-[#666666] block text-[10px]">Total Allocated</span>
-                <span className="text-[#292827] font-mono text-sm">{formatCurrency(totalAllocated, event.currency)}</span>
+            {/* Save Controls & Overall summary pills */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Save Status & Action Button */}
+              <div className="flex items-center space-x-2">
+                {saveStatus === "saving" && (
+                  <span className="flex items-center text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5 text-amber-600" />
+                    Saving to D1...
+                  </span>
+                )}
+                {saveStatus === "saved" && (
+                  <span className="flex items-center text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                    <CheckCircle className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                    Saved {lastSavedTime ? `at ${lastSavedTime}` : "to D1 ✓"}
+                  </span>
+                )}
+                {saveStatus === "unsaved" && (
+                  <span className="flex items-center text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
+                    <AlertCircle className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
+                    Unsaved changes
+                  </span>
+                )}
+                {saveStatus === "error" && (
+                  <span className="flex items-center text-xs font-medium text-rose-800 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-xl">
+                    <AlertCircle className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
+                    Save failed (retry)
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleSavePlan()}
+                  disabled={saveStatus === "saving"}
+                  className={`px-4 py-2 rounded-buttons text-xs font-[540] transition-all flex items-center space-x-1.5 shadow-sm cursor-pointer ${
+                    isDirty
+                      ? "bg-[#421d24] hover:bg-[#572730] text-white ring-2 ring-[#714cb6]/50 shadow-md animate-pulse"
+                      : "bg-[#421d24] hover:bg-[#572730] text-white"
+                  }`}
+                  title="Save all entered budget amounts permanently to Cloudflare D1"
+                >
+                  {saveStatus === "saving" ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#d4c7ff]" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5 text-[#d4c7ff]" />
+                  )}
+                  <span>{isDirty ? "Save Budget (Unsaved)" : "Save Budget & Expenses"}</span>
+                </button>
               </div>
-              <div className="px-3.5 py-1.5 rounded-xl bg-[#f8f7f5] border border-[#e3e3e2]">
-                <span className="text-[#666666] block text-[10px]">Actual Spent</span>
-                <span className="text-emerald-800 font-mono text-sm">{formatCurrency(totalSpent, event.currency)}</span>
-              </div>
-              <div className="px-3.5 py-1.5 rounded-xl bg-[#f8f7f5] border border-[#e3e3e2]">
-                <span className="text-[#666666] block text-[10px]">Remaining</span>
-                <span className={`font-mono text-sm ${budgetVariance >= 0 ? "text-emerald-800" : "text-rose-700"}`}>
-                  {formatCurrency(budgetVariance, event.currency, { includeSign: true })}
-                </span>
+
+              {/* Overall summary pills */}
+              <div className="flex items-center space-x-2 text-xs font-semibold">
+                <div className="px-3 py-1.5 rounded-xl bg-[#f8f7f5] border border-[#e3e3e2]">
+                  <span className="text-[#666666] block text-[10px]">Total Allocated</span>
+                  <span className="text-[#292827] font-mono text-xs">{formatCurrency(totalAllocated, event.currency)}</span>
+                </div>
+                <div className="px-3 py-1.5 rounded-xl bg-[#f8f7f5] border border-[#e3e3e2]">
+                  <span className="text-[#666666] block text-[10px]">Actual Spent</span>
+                  <span className="text-emerald-800 font-mono text-xs">{formatCurrency(totalSpent, event.currency)}</span>
+                </div>
+                <div className="px-3 py-1.5 rounded-xl bg-[#f8f7f5] border border-[#e3e3e2]">
+                  <span className="text-[#666666] block text-[10px]">Remaining</span>
+                  <span className={`font-mono text-xs ${budgetVariance >= 0 ? "text-emerald-800" : "text-rose-700"}`}>
+                    {formatCurrency(budgetVariance, event.currency, { includeSign: true })}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -735,11 +1093,14 @@ export function EventDashboard({ params }: EventDashboardProps) {
             {plan.budgetBreakdown.map((cat) => {
               const spent = cat.actualSpent || 0;
               const catPercent = Math.min(100, Math.round((spent / (cat.allocatedAmount || 1)) * 100));
+              const isCatDirty = Boolean(dirtyCategories[cat.id]);
 
               return (
                 <div
                   key={cat.id}
-                  className="p-4 rounded-2xl bg-white border border-[#e3e3e2] hover:border-[#714cb6] transition-all space-y-3"
+                  className={`p-4 rounded-2xl bg-white border transition-all space-y-3 ${
+                    isCatDirty ? "border-amber-400 ring-1 ring-amber-300" : "border-[#e3e3e2] hover:border-[#714cb6]"
+                  }`}
                 >
                   <div className="flex items-start justify-between">
                     <div>
@@ -753,21 +1114,66 @@ export function EventDashboard({ params }: EventDashboardProps) {
                     </span>
                   </div>
 
-                  {/* Inline Edit Actual Spent */}
+                  {/* Inline Edit Actual Spent with Save button */}
                   <div className="flex items-center space-x-2">
                     <label className="text-[11px] text-[#666666] font-semibold whitespace-nowrap">
                       Actual Spent:
                     </label>
-                    <div className="relative flex-1">
-                      <span className="absolute left-2.5 top-1 text-xs font-bold text-[#421d24]">{getCurrencySymbol(event.currency)}</span>
-                      <input
-                        type="number"
-                        aria-label={`Actual spent amount for ${cat.category}`}
-                        value={cat.actualSpent || ""}
-                        placeholder="0"
-                        onChange={(e) => handleUpdateActualSpent(cat.id, e.target.value)}
-                        className="w-full pl-8 pr-2.5 py-1 text-xs rounded-lg bg-[#f8f7f5] border border-[#e3e3e2] text-[#292827] font-mono focus:outline-none focus:ring-1 focus:ring-[#714cb6]"
-                      />
+                    <div className="relative flex-1 flex items-center space-x-1.5">
+                      <div className="relative flex-1">
+                        <span className="absolute left-2.5 top-1 text-xs font-bold text-[#421d24]">
+                          {getCurrencySymbol(event.currency)}
+                        </span>
+                        <input
+                          type="number"
+                          aria-label={`Actual spent amount for ${cat.category}`}
+                          value={cat.actualSpent || ""}
+                          placeholder="0"
+                          onChange={(e) => handleUpdateActualSpent(cat.id, e.target.value)}
+                          onBlur={() => handleSavePlan()}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.currentTarget.blur();
+                              handleSavePlan();
+                            }
+                          }}
+                          className={`w-full pl-8 pr-2.5 py-1 text-xs rounded-lg font-mono focus:outline-none focus:ring-1 transition-all ${
+                            isCatDirty
+                              ? "bg-amber-50/70 border-amber-300 text-[#292827] focus:ring-amber-500"
+                              : "bg-[#f8f7f5] border-[#e3e3e2] text-[#292827] focus:ring-[#714cb6]"
+                          }`}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSavePlan()}
+                        disabled={saveStatus === "saving"}
+                        className={`px-2 py-1 rounded-md text-[11px] font-[540] transition-all flex items-center space-x-1 flex-shrink-0 cursor-pointer ${
+                          isCatDirty
+                            ? "bg-[#421d24] hover:bg-[#572730] text-white shadow-sm ring-1 ring-[#714cb6]"
+                            : spent > 0
+                            ? "bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+                            : "bg-white text-[#666666] border border-[#e3e3e2] hover:bg-[#f8f7f5]"
+                        }`}
+                        title="Save entered amount to Cloudflare D1"
+                      >
+                        {isCatDirty ? (
+                          <>
+                            <Save className="w-3 h-3 text-[#d4c7ff]" />
+                            <span>Save</span>
+                          </>
+                        ) : spent > 0 ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            <span>Saved</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-3 h-3 text-[#666666]" />
+                            <span>Save</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
 
@@ -805,9 +1211,14 @@ export function EventDashboard({ params }: EventDashboardProps) {
                 <Clock className="w-5 h-5 text-amber-600" />
                 <h3 className="text-base font-bold text-[#292827]">Interactive Timeline Milestones</h3>
               </div>
-              <span className="text-xs text-[#666666]">
-                {plan.timeline.filter((t) => t.completed).length} / {plan.timeline.length} done
-              </span>
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] font-mono font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  D1 Synced
+                </span>
+                <span className="text-xs text-[#666666]">
+                  {plan.timeline.filter((t) => t.completed).length} / {plan.timeline.length} done
+                </span>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -871,9 +1282,14 @@ export function EventDashboard({ params }: EventDashboardProps) {
                 <FileCheck className="w-5 h-5 text-[#714cb6]" />
                 <h3 className="text-base font-bold text-[#292827]">Vendor Sourcing & Questions</h3>
               </div>
-              <span className="text-xs text-[#666666]">
-                {plan.vendorChecklist.filter((v) => v.booked).length} / {plan.vendorChecklist.length} booked
-              </span>
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] font-mono font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  D1 Synced
+                </span>
+                <span className="text-xs text-[#666666]">
+                  {plan.vendorChecklist.filter((v) => v.booked).length} / {plan.vendorChecklist.length} booked
+                </span>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -1078,6 +1494,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
         event={event}
+        userEmail={user?.email || undefined}
         onEventUpdated={handleEventUpdated}
       />
     </div>

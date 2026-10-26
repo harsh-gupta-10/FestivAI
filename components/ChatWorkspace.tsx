@@ -156,8 +156,12 @@ export function ChatWorkspace({
   const fetchEvents = async () => {
     setIsLoadingEvents(true);
     try {
+      const headers: Record<string, string> = {};
+      if (user?.email) {
+        headers["x-user-email"] = user.email;
+      }
       const emailQuery = user?.email ? `?email=${encodeURIComponent(user.email)}` : "";
-      const res = await fetch(`/api/events${emailQuery}`);
+      const res = await fetch(`/api/events${emailQuery}`, { headers });
       if (res.ok) {
         const data = (await res.json()) as any;
         const evs = (data.events || []) as EventItem[];
@@ -186,7 +190,11 @@ export function ChatWorkspace({
 
     if (activeEvent) {
       // Query real event stats from D1
-      fetch(`/api/events/${activeEvent.id}`)
+      const headers: Record<string, string> = {};
+      if (user?.email) {
+        headers["x-user-email"] = user.email;
+      }
+      fetch(`/api/events/${activeEvent.id}`, { headers })
         .then((res) => (res.ok ? res.json() : null))
         .then((data: any) => {
           if (!data) return;
@@ -253,7 +261,11 @@ export function ChatWorkspace({
         }
       }
 
-      fetch(`/api/chat?eventId=${encodeURIComponent(activeEvent.id)}`)
+      const chatHeaders: Record<string, string> = {};
+      if (user?.email) {
+        chatHeaders["x-user-email"] = user.email;
+      }
+      fetch(`/api/chat?eventId=${encodeURIComponent(activeEvent.id)}`, { headers: chatHeaders })
         .then((res) => (res.ok ? res.json() : null))
         .then((data: any) => {
           if (data?.messages && Array.isArray(data.messages) && data.messages.length > 0) {
@@ -322,7 +334,14 @@ export function ChatWorkspace({
     }
 
     try {
-      await fetch(`/api/chat?eventId=${encodeURIComponent(activeEvent.id)}`, { method: "DELETE" });
+      const deleteHeaders: Record<string, string> = {};
+      if (user?.email) {
+        deleteHeaders["x-user-email"] = user.email;
+      }
+      await fetch(`/api/chat?eventId=${encodeURIComponent(activeEvent.id)}`, {
+        method: "DELETE",
+        headers: deleteHeaders,
+      });
     } catch {}
 
     const hostName = user?.displayName || user?.email?.split("@")[0] || "Organizer";
@@ -373,6 +392,7 @@ export function ChatWorkspace({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(user?.email ? { "x-user-email": user.email } : {}),
           ...(storedKey ? { "x-openai-key": storedKey } : {}),
         },
         body: JSON.stringify({
@@ -462,10 +482,14 @@ export function ChatWorkspace({
 
     if (activeEvent) {
       try {
+        const patchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (user?.email) {
+          patchHeaders["x-user-email"] = user.email;
+        }
         await fetch(`/api/events/${activeEvent.id}`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ currency: updatedCode }),
+          headers: patchHeaders,
+          body: JSON.stringify({ currency: updatedCode, userEmail: user?.email }),
         });
         setEvents((prev) =>
           prev.map((e) => (e.id === activeEvent.id ? { ...e, currency: updatedCode } : e))

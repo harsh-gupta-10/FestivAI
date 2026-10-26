@@ -80,7 +80,27 @@ export async function GET(req: NextRequest) {
     if (!eventId) {
       return NextResponse.json({ error: "eventId is required" }, { status: 400 });
     }
-    const history = await getEventChatHistoryFromDb(eventId);
+    const eventData = await getEventByIdOrSlug(eventId);
+    if (!eventData) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    const ownerEmail = (eventData.event.organizer_email || "").trim().toLowerCase();
+    const requestEmail = (
+      req.headers.get("x-user-email") ||
+      searchParams.get("userEmail") ||
+      searchParams.get("email") ||
+      ""
+    ).trim().toLowerCase();
+
+    if (ownerEmail && (!requestEmail || requestEmail !== ownerEmail)) {
+      return NextResponse.json(
+        { error: "Forbidden: You do not have permission to view this chat history." },
+        { status: 403 }
+      );
+    }
+
+    const history = await getEventChatHistoryFromDb(eventData.event.id);
     return NextResponse.json({ success: true, messages: history });
   } catch (error: any) {
     console.error("GET /api/chat error:", error);
@@ -95,14 +115,27 @@ export async function DELETE(req: NextRequest) {
     if (!eventId) {
       return NextResponse.json({ error: "eventId is required" }, { status: 400 });
     }
-    const userEmail = req.headers.get("x-user-email") || searchParams.get("userEmail");
-    if (userEmail) {
-      const existing = await getEventByIdOrSlug(eventId);
-      if (existing && existing.event.organizer_email && existing.event.organizer_email.toLowerCase() !== userEmail.toLowerCase()) {
-        return NextResponse.json({ error: "Unauthorized to clear chat for this event" }, { status: 403 });
-      }
+    const eventData = await getEventByIdOrSlug(eventId);
+    if (!eventData) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
-    await updateEventChatHistoryInDb(eventId, []);
+
+    const ownerEmail = (eventData.event.organizer_email || "").trim().toLowerCase();
+    const requestEmail = (
+      req.headers.get("x-user-email") ||
+      searchParams.get("userEmail") ||
+      searchParams.get("email") ||
+      ""
+    ).trim().toLowerCase();
+
+    if (ownerEmail && (!requestEmail || requestEmail !== ownerEmail)) {
+      return NextResponse.json(
+        { error: "Forbidden: You do not have permission to clear chat history for this event." },
+        { status: 403 }
+      );
+    }
+
+    await updateEventChatHistoryInDb(eventData.event.id, []);
     return NextResponse.json({ success: true, message: "Chat history cleared" });
   } catch (error: any) {
     console.error("DELETE /api/chat error:", error);
@@ -130,6 +163,12 @@ export async function POST(req: NextRequest) {
     const userPrompt = lastUserMessage.content.trim();
     const lowerPrompt = userPrompt.toLowerCase();
 
+    const effectiveUserEmail = (
+      req.headers.get("x-user-email") ||
+      userEmail ||
+      ""
+    ).trim().toLowerCase();
+
     // 1. Fetch current active event details if selected
     let activeEvent: any = null;
     let activePlan: any = null;
@@ -138,6 +177,13 @@ export async function POST(req: NextRequest) {
     if (eventId) {
       const eventData = await getEventByIdOrSlug(eventId);
       if (eventData) {
+        const ownerEmail = (eventData.event.organizer_email || "").trim().toLowerCase();
+        if (ownerEmail && (!effectiveUserEmail || effectiveUserEmail !== ownerEmail)) {
+          return NextResponse.json(
+            { error: "Forbidden: You do not have permission to query or modify this event's assistant." },
+            { status: 403 }
+          );
+        }
         activeEvent = eventData.event;
         activePlan = eventData.plan;
         activeRsvps = await getRsvpsForEvent(eventData.event.id);
@@ -145,7 +191,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Fetch all user events for contextual awareness
-    const userEvents = await getEventsByOrganizerEmail(userEmail);
+    const userEvents = effectiveUserEmail ? await getEventsByOrganizerEmail(effectiveUserEmail) : [];
 
     // If activeEvent wasn't found by ID but user has events, auto-bind to the primary event
     if (!activeEvent && userEvents.length > 0) {

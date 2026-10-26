@@ -28,6 +28,7 @@ export function PublicInvite({ params }: PublicInviteProps) {
   const [event, setEvent] = useState<EventRecord | null>(null);
   const [plan, setPlan] = useState<AIEventPlan | null>(null);
   const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
+  const [confirmedCount, setConfirmedCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,12 +64,20 @@ export function PublicInvite({ params }: PublicInviteProps) {
     async function loadData() {
       try {
         setLoading(true);
-        const res = await fetch(`/api/events/${eventId}`);
+        const res = await fetch(`/api/events/${eventId}?view=public`);
         if (!res.ok) throw new Error("Could not find event: " + eventId);
         const data = (await res.json()) as any;
         setEvent(data.event);
         setPlan(data.plan);
         setRsvps(data.rsvps || []);
+        if (data.confirmedGuestsCount !== undefined) {
+          setConfirmedCount(data.confirmedGuestsCount);
+        } else if (data.rsvps) {
+          const total = data.rsvps
+            .filter((r: any) => r.status === "going")
+            .reduce((acc: number, r: any) => acc + (r.attendees_count || 1), 0);
+          setConfirmedCount(total);
+        }
       } catch (err: any) {
         setError(err.message || "Failed to load invitation");
       } finally {
@@ -128,7 +137,11 @@ export function PublicInvite({ params }: PublicInviteProps) {
       if (!res.ok) throw new Error("Failed to record RSVP");
       const data = (await res.json()) as any;
 
-      setRsvps(data.rsvps || []);
+      if (data.confirmedGuestsCount !== undefined) {
+        setConfirmedCount(data.confirmedGuestsCount);
+      } else if (status === "going") {
+        setConfirmedCount((prev) => prev + attendeesCount);
+      }
       setRsvpSuccess(true);
 
       // Trigger Celebration Confetti!
@@ -177,7 +190,7 @@ export function PublicInvite({ params }: PublicInviteProps) {
   }
 
   const colors = plan.eventSummary?.themeColors || ["#d4c7ff", "#421d24", "#714cb6"];
-  const goingTotal = rsvps.filter((r) => r.status === "going").reduce((acc, r) => acc + (r.attendees_count || 1), 0);
+  const goingTotal = confirmedCount || (rsvps.length > 0 ? rsvps.filter((r) => r.status === "going").reduce((acc, r) => acc + (r.attendees_count || 1), 0) : 0);
 
   return (
     <div className="min-h-screen bg-[#f2f0eb] text-[#292827] flex flex-col font-sans selection:bg-[#d4c7ff] selection:text-[#292827]">

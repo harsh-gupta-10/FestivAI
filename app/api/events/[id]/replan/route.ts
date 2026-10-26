@@ -23,6 +23,20 @@ export async function POST(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
+    // Authorization & IDOR protection: Verify ownership
+    const requestEmail =
+      req.headers.get("x-user-email") || body.userEmail || body.organizer_email;
+    const existingOwner = (existing.event.organizer_email || "").trim().toLowerCase();
+
+    if (existingOwner) {
+      if (!requestEmail || requestEmail.trim().toLowerCase() !== existingOwner) {
+        return NextResponse.json(
+          { error: "Forbidden: You do not have permission to replan this celebration." },
+          { status: 403 }
+        );
+      }
+    }
+
     // Custom API key from headers or Cloudflare bindings
     const customHeaderKey =
       req.headers.get("x-openai-api-key") ||

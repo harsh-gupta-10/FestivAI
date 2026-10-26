@@ -52,12 +52,15 @@ export async function POST(
     });
 
     const updatedRsvps = await getRsvpsForEvent(existing.event.id);
+    const confirmedGuestsCount = updatedRsvps
+      .filter((r) => r.status === "going")
+      .reduce((acc, r) => acc + (r.attendees_count || 1), 0);
 
     return NextResponse.json({
       success: true,
       message: "RSVP recorded successfully",
       rsvpId,
-      rsvps: updatedRsvps,
+      confirmedGuestsCount,
     });
   } catch (error: any) {
     console.error("POST /api/events/[id]/rsvp error:", error);
