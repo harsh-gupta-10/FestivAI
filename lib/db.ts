@@ -30,9 +30,13 @@ export async function ensureDbTables(DB: any): Promise<void> {
         banner_r2_key TEXT,
         ai_plan_json TEXT,
         last_prompt TEXT,
+        chat_history_json TEXT,
         created_at TEXT
       )
     `).run().catch((e: any) => console.warn("events table check:", e?.message));
+
+    // Migration: add chat_history_json column to existing tables if missing
+    await DB.prepare("ALTER TABLE events ADD COLUMN chat_history_json TEXT").run().catch(() => {});
 
     // 2. Create rsvps table
     await DB.prepare(`
@@ -315,4 +319,113 @@ export async function getEventsByOrganizerEmail(email?: string): Promise<EventRe
 }
 
 export const insertRsvp = createRsvpRecord;
+
+export async function updateEventDetailsInDb(
+  eventId: string,
+  updates: Partial<EventRecord>
+): Promise<boolean> {
+  const { DB } = await getAppBindings();
+  await ensureDbTables(DB);
+
+  const allowedFields = [
+    "title",
+    "event_type",
+    "event_date",
+    "location",
+    "guest_count",
+    "total_budget",
+    "currency",
+    "vibe",
+    "banner_r2_key",
+    "ai_plan_json",
+    "last_prompt",
+    "chat_history_json",
+  ];
+
+  const setClauses: string[] = [];
+  const values: any[] = [];
+
+  for (const [key, val] of Object.entries(updates)) {
+    if (allowedFields.includes(key) && val !== undefined) {
+      setClauses.push(`${key} = ?`);
+      values.push(val);
+    }
+  }
+
+  if (setClauses.length === 0) return true;
+
+  values.push(eventId);
+  const query = `UPDATE events SET ${setClauses.join(", ")} WHERE id = ?`;
+
+  try {
+    await DB.prepare(query).bind(...values).run();
+    return true;
+  } catch (error) {
+    console.error("Error updating event details in DB:", error);
+    return false;
+  }
+}
+
+export async function updateEventChatHistoryInDb(
+  eventId: string,
+  messages: any[]
+): Promise<boolean> {
+  const { DB } = await getAppBindings();
+  await ensureDbTables(DB);
+
+  try {
+    const jsonStr = JSON.stringify(messages.slice(-50)); // persist recent 50 messages
+    const query = "UPDATE events SET chat_history_json = ? WHERE id = ?";
+    await DB.prepare(query).bind(jsonStr, eventId).run();
+    return true;
+  } catch (error) {
+    console.error("Error saving chat history in DB:", error);
+    return false;
+  }
+}
+
+export async function getEventChatHistoryFromDb(eventId: string): Promise<any[]> {
+  const { DB } = await getAppBindings();
+  await ensureDbTables(DB);
+
+  try {
+    const query = "SELECT chat_history_json FROM events WHERE id = ? LIMIT 1";
+    const res = await DB.prepare(query).bind(eventId).first();
+    if (res && (res as any).chat_history_json) {
+      return JSON.parse((res as any).chat_history_json);
+    }
+    return [];
+  } catch (error) {
+    console.error("Error fetching chat history from DB:", error);
+    return [];
+  }
+}
+
+export async function deleteEventRecord(eventId: string, organizerEmail?: string): Promise<boolean> {
+  const { DB } = await getAppBindings();
+  await ensureDbTables(DB);
+
+  try {
+    if (organizerEmail && organizerEmail.trim()) {
+      const normalized = organizerEmail.trim().toLowerCase();
+      // Verify ownership before deleting
+      const checkQuery = "SELECT id FROM events WHERE id = ? AND lower(organizer_email) = ? LIMIT 1";
+      const existing = await DB.prepare(checkQuery).bind(eventId, normalized).first();
+      if (!existing) {
+        console.warn("Unauthorized attempt to delete event:", eventId, organizerEmail);
+        return false;
+      }
+    }
+
+    // Delete rsvps first (foreign key cascade)
+    await DB.prepare("DELETE FROM rsvps WHERE event_id = ?").bind(eventId).run().catch(() => {});
+    // Delete event
+    await DB.prepare("DELETE FROM events WHERE id = ?").bind(eventId).run();
+    return true;
+  } catch (error) {
+    console.error("Error deleting event record:", error);
+    return false;
+  }
+}
+
 

@@ -24,8 +24,10 @@ import {
   Wand2,
   FileCheck,
   MessageSquare,
+  Edit3,
 } from "lucide-react";
 import { formatCurrency, getCurrencySymbol, SUPPORTED_CURRENCIES } from "@/lib/currency";
+import { EditEventModal } from "@/components/EditEventModal";
 
 
 export interface EventDashboardProps {
@@ -57,8 +59,20 @@ export function EventDashboard({ params }: EventDashboardProps) {
   // Share link copy notification
   const [copiedLink, setCopiedLink] = useState(false);
 
+  // Edit details modal
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
   // Banner uploader
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+
+  const handleEventUpdated = (updated: any) => {
+    setEvent((prev) => (prev ? { ...prev, ...updated } : null));
+    if (updated.ai_plan_json) {
+      try {
+        setPlan(typeof updated.ai_plan_json === "string" ? JSON.parse(updated.ai_plan_json) : updated.ai_plan_json);
+      } catch {}
+    }
+  };
 
   // Fetch event and plan on mount
   useEffect(() => {
@@ -417,6 +431,24 @@ export function EventDashboard({ params }: EventDashboardProps) {
               <Download className="w-4 h-4 text-[#666666]" />
               <span className="hidden sm:inline">Export Kit</span>
             </button>
+
+            <button
+              onClick={() => setIsEditModalOpen(true)}
+              className="px-3.5 py-2.5 rounded-buttons text-xs font-[540] bg-white hover:bg-[#f8f7f5] text-[#292827] border border-[#e3e3e2] shadow-sm flex items-center space-x-1.5 transition-colors"
+              title="Edit Celebration Details (Title, Date, Venue, Budget, Guests)"
+            >
+              <Edit3 className="w-4 h-4 text-[#714cb6]" />
+              <span>Edit Details</span>
+            </button>
+
+            <Link
+              href={`/app?event=${event.id}`}
+              className="px-3.5 py-2.5 rounded-buttons text-xs font-[540] bg-[#f2f0eb] hover:bg-[#e3e3e2] text-[#421d24] border border-[#e3e3e2] shadow-sm flex items-center space-x-1.5 transition-colors"
+              title="Open in AI Concierge Chat"
+            >
+              <MessageSquare className="w-4 h-4 text-[#714cb6]" />
+              <span>AI Chat</span>
+            </Link>
 
             <button
               onClick={() => setIsInspectorOpen(true)}
@@ -1039,6 +1071,14 @@ export function EventDashboard({ params }: EventDashboardProps) {
         isOpen={isInspectorOpen}
         onClose={() => setIsInspectorOpen(false)}
         data={inspectorData}
+      />
+
+      {/* Edit Event Details Modal */}
+      <EditEventModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        event={event}
+        onEventUpdated={handleEventUpdated}
       />
     </div>
   );

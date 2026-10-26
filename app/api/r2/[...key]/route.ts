@@ -13,8 +13,16 @@ export async function GET(
       return NextResponse.json({ error: "Key is required" }, { status: 400 });
     }
 
-    // Path traversal defense
-    const key = rawKey.replace(/\.\./g, "").replace(/^\/+/, "");
+    // Strict Path traversal & character validation defense
+    if (rawKey.includes("..") || rawKey.startsWith("/") || rawKey.includes("\\")) {
+      return NextResponse.json({ error: "Invalid object key path traversal" }, { status: 400 });
+    }
+
+    if (!/^[a-zA-Z0-9_\-\.\/]+$/.test(rawKey)) {
+      return NextResponse.json({ error: "Invalid characters in object key" }, { status: 400 });
+    }
+
+    const key = rawKey;
 
     const { BUCKET } = await getAppBindings();
     const object = await BUCKET.get(key);
@@ -31,6 +39,7 @@ export async function GET(
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "public, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error: any) {

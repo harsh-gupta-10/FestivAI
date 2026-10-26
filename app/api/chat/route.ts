@@ -6,12 +6,17 @@ import {
   getEventsByOrganizerEmail,
   createEventRecord,
   updateEventCurrencyInDb,
+  updateEventDetailsInDb,
+  updateEventChatHistoryInDb,
+  getEventChatHistoryFromDb,
 } from "@/lib/db";
 import { generateMasterplan } from "@/lib/openai";
 import { getWeatherIntelligence, WeatherReport } from "@/lib/tools/weather";
 import { searchWebIntelligence, WebSearchReport } from "@/lib/tools/web-search";
 import { formatCurrency, getCurrencySymbol } from "@/lib/currency";
 import { formatCelebrationDate } from "@/lib/date";
+import { sanitizeString, validateBudget, validateEventDate } from "@/lib/validation";
+import { EventRecord } from "@/types";
 
 export interface ToolCallItem {
   id: string;
@@ -41,6 +46,68 @@ export interface ChatMessage {
     title?: string;
     data?: any;
   };
+}
+
+// Persist chat to Cloudflare D1 helper
+async function respondWithChat(
+  activeEventId: string | undefined,
+  incomingMessages: ChatMessage[],
+  payload: {
+    response: string;
+    toolCalls?: ToolCallItem[];
+    actionCard?: any;
+    updatedEvent?: any;
+  }
+) {
+  if (activeEventId) {
+    const assistantMsg: ChatMessage = {
+      id: `asst-${Date.now()}`,
+      role: "assistant",
+      content: payload.response,
+      createdAt: new Date().toISOString(),
+      toolCalls: payload.toolCalls,
+      actionCard: payload.actionCard,
+    };
+    await updateEventChatHistoryInDb(activeEventId, [...incomingMessages, assistantMsg]).catch(() => {});
+  }
+  return NextResponse.json(payload);
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const eventId = searchParams.get("eventId");
+    if (!eventId) {
+      return NextResponse.json({ error: "eventId is required" }, { status: 400 });
+    }
+    const history = await getEventChatHistoryFromDb(eventId);
+    return NextResponse.json({ success: true, messages: history });
+  } catch (error: any) {
+    console.error("GET /api/chat error:", error);
+    return NextResponse.json({ error: "Failed to fetch chat history" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const eventId = searchParams.get("eventId");
+    if (!eventId) {
+      return NextResponse.json({ error: "eventId is required" }, { status: 400 });
+    }
+    const userEmail = req.headers.get("x-user-email") || searchParams.get("userEmail");
+    if (userEmail) {
+      const existing = await getEventByIdOrSlug(eventId);
+      if (existing && existing.event.organizer_email && existing.event.organizer_email.toLowerCase() !== userEmail.toLowerCase()) {
+        return NextResponse.json({ error: "Unauthorized to clear chat for this event" }, { status: 403 });
+      }
+    }
+    await updateEventChatHistoryInDb(eventId, []);
+    return NextResponse.json({ success: true, message: "Chat history cleared" });
+  } catch (error: any) {
+    console.error("DELETE /api/chat error:", error);
+    return NextResponse.json({ error: "Failed to clear chat history" }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -158,7 +225,7 @@ export async function POST(req: NextRequest) {
         targetCurrency
       )}\n- **Sync Status:** Real-time persistence saved.`;
 
-      return NextResponse.json({
+      return respondWithChat(activeEvent?.id, messages, {
         response: responseText,
         toolCalls: [toolCall],
         actionCard: activeEvent && activePlan
@@ -177,7 +244,182 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. TOOL: Event Date, Schedule & Countdown Query
+    // 4. TOOL: Conversational Event Editing Intent (Location, Date, Title, Guests, Budget, Vibe)
+    const isEditEventIntent =
+      activeEvent &&
+      !isCurrencySwitch &&
+      (lowerPrompt.includes("change") ||
+        lowerPrompt.includes("update") ||
+        lowerPrompt.includes("set") ||
+        lowerPrompt.includes("rename") ||
+        lowerPrompt.includes("reschedule") ||
+        lowerPrompt.includes("move") ||
+        lowerPrompt.includes("increase") ||
+        lowerPrompt.includes("decrease") ||
+        lowerPrompt.includes("cut")) &&
+      (lowerPrompt.includes("location") ||
+        lowerPrompt.includes("venue") ||
+        lowerPrompt.includes("city") ||
+        lowerPrompt.includes("destination") ||
+        lowerPrompt.includes("date") ||
+        lowerPrompt.includes("title") ||
+        lowerPrompt.includes("name") ||
+        lowerPrompt.includes("guest") ||
+        lowerPrompt.includes("headcount") ||
+        lowerPrompt.includes("budget") ||
+        lowerPrompt.includes("theme") ||
+        lowerPrompt.includes("vibe"));
+
+    if (isEditEventIntent) {
+      const updates: Partial<EventRecord> = {};
+      const changesList: string[] = [];
+
+      // A. Location / Venue
+      if (
+        lowerPrompt.includes("location") ||
+        lowerPrompt.includes("venue") ||
+        lowerPrompt.includes("city") ||
+        lowerPrompt.includes("destination") ||
+        lowerPrompt.includes("move event to") ||
+        lowerPrompt.includes("move to")
+      ) {
+        const locMatch =
+          userPrompt.match(/(?:change|update|set|move)\s+(?:the\s+)?(?:venue\s+location|event\s+location|location|venue|city|destination)\s+(?:to|in)\s+([^.!?\n]+)/i) ||
+          userPrompt.match(/move\s+(?:the\s+)?(?:event\s+)?(?:to|in)\s+([^.!?\n]+)/i);
+        if (locMatch && locMatch[1].trim()) {
+          const newLoc = sanitizeString(locMatch[1].trim(), 120);
+          updates.location = newLoc;
+          changesList.push(`📍 Venue Location updated to **${newLoc}**`);
+        }
+      }
+
+      // B. Date / Reschedule
+      if (
+        lowerPrompt.includes("date") ||
+        lowerPrompt.includes("reschedule") ||
+        lowerPrompt.includes("day")
+      ) {
+        const dateMatch = userPrompt.match(/([0-9]{4}-[0-9]{2}-[0-9]{2})/);
+        if (dateMatch) {
+          const newDate = dateMatch[1];
+          const check = validateEventDate(newDate);
+          if (check.isValid) {
+            updates.event_date = check.sanitizedValue;
+            const { formatted } = formatCelebrationDate(newDate);
+            changesList.push(`🗓️ Event Date rescheduled to **${formatted}**`);
+          }
+        }
+      }
+
+      // C. Title / Rename
+      if (lowerPrompt.includes("title") || lowerPrompt.includes("rename") || lowerPrompt.includes("name")) {
+        const titleMatch =
+          userPrompt.match(/(?:change|update|set)\s+(?:the\s+)?title\s+to\s+([^.!?\n]+)/i) ||
+          userPrompt.match(/rename\s+(?:the\s+)?(?:event\s+)?to\s+([^.!?\n]+)/i);
+        if (titleMatch && titleMatch[1].trim()) {
+          const newTitle = sanitizeString(titleMatch[1].trim(), 120);
+          updates.title = newTitle;
+          changesList.push(`✨ Celebration Title renamed to **"${newTitle}"**`);
+        }
+      }
+
+      // D. Guest count
+      if (lowerPrompt.includes("guest") || lowerPrompt.includes("headcount") || lowerPrompt.includes("people")) {
+        const guestMatch =
+          userPrompt.match(/(?:change|update|set|increase|decrease)\s+(?:the\s+)?(?:guest\s+count|guests|headcount)\s+to\s+([0-9]+)/i) ||
+          userPrompt.match(/([0-9]+)\s+(?:guests|people|attendees)/i);
+        if (guestMatch) {
+          const count = parseInt(guestMatch[1], 10);
+          if (count > 0) {
+            updates.guest_count = count;
+            changesList.push(`👥 Target Guests adjusted to **${count} attendees**`);
+          }
+        }
+      }
+
+      // E. Budget
+      if (lowerPrompt.includes("budget")) {
+        const lakhMatch = userPrompt.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:lakh|lac|l)/i);
+        const croreMatch = userPrompt.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:crore|cr)/i);
+        let newBudget: number | null = null;
+
+        if (lakhMatch) {
+          newBudget = parseFloat(lakhMatch[1]) * 100000;
+        } else if (croreMatch) {
+          newBudget = parseFloat(croreMatch[1]) * 10000000;
+        } else {
+          const bMatch = userPrompt.match(/(?:[\$₹€£]|to\s*:?\s*[\$₹€£]?)\s*([0-9]+[0-9,]*)\s*(k|thousand)?/i);
+          if (bMatch) {
+            let val = parseFloat(bMatch[1].replace(/,/g, ""));
+            if (bMatch[2]?.toLowerCase().startsWith("k")) val *= 1000;
+            if (!isNaN(val) && val >= 50) newBudget = val;
+          }
+        }
+
+        if (newBudget && newBudget >= 50) {
+          updates.total_budget = newBudget;
+          if (activePlan && Array.isArray(activePlan.budgetBreakdown)) {
+            const oldBudget = activeEvent.total_budget || 1;
+            const ratio = newBudget / oldBudget;
+            let cum = 0;
+            const rebalanced = activePlan.budgetBreakdown.map((item: any, idx: number, arr: any[]) => {
+              if (idx === arr.length - 1) {
+                const finalAlloc = Math.max(0, newBudget! - cum);
+                return { ...item, allocatedAmount: finalAlloc };
+              }
+              const alloc = Math.round(item.allocatedAmount * ratio);
+              cum += alloc;
+              return { ...item, allocatedAmount: alloc };
+            });
+            const newPlan = { ...activePlan, budgetBreakdown: rebalanced };
+            updates.ai_plan_json = JSON.stringify(newPlan);
+            activePlan = newPlan;
+          }
+          changesList.push(
+            `💰 Total Budget updated to **${formatCurrency(newBudget, activeEvent.currency)}** (all categories mathematically rebalanced)`
+          );
+        }
+      }
+
+      // F. Vibe / Theme
+      if (lowerPrompt.includes("vibe") || lowerPrompt.includes("theme") || lowerPrompt.includes("aesthetic")) {
+        const vibeMatch =
+          userPrompt.match(/(?:change|update|set)\s+(?:the\s+)?(?:vibe|theme|aesthetic)\s+to\s+([^.!?\n]+)/i);
+        if (vibeMatch && vibeMatch[1].trim()) {
+          const newVibe = sanitizeString(vibeMatch[1].trim(), 120);
+          updates.vibe = newVibe;
+          changesList.push(`🎨 Theme & Vibe updated to **${newVibe}**`);
+        }
+      }
+
+      if (changesList.length > 0) {
+        await updateEventDetailsInDb(activeEvent.id, updates);
+        Object.assign(activeEvent, updates);
+
+        const toolCall: ToolCallItem = {
+          id: `tool-${Date.now()}`,
+          tool: "sync_d1",
+          title: `Updated Celebration Details: ${activeEvent.title}`,
+          summary: changesList.map((c) => c.replace(/\*\*/g, "")).join(" • "),
+          data: updates,
+          status: "completed",
+        };
+
+        const responseText = `I have updated your celebration details for **${activeEvent.title}** in Cloudflare D1:\n\n${changesList
+          .map((c) => `• ${c}`)
+          .join(
+            "\n"
+          )}\n\n### Current Celebration Snapshot:\n- **Event Date:** ${formatCelebrationDate(activeEvent.event_date).formatted}\n- **Venue:** 📍 ${activeEvent.location}\n- **Guests:** 👥 ${activeEvent.guest_count} attendees\n- **Total Budget:** 💰 ${formatCurrency(activeEvent.total_budget, activeEvent.currency)}\n- **Theme:** ✨ ${activeEvent.vibe || "Celebration Elegance"}\n\n*All modifications are persisted in your Cloudflare D1 serverless database and synced across your dashboard.*`;
+
+        return respondWithChat(activeEvent.id, messages, {
+          response: responseText,
+          toolCalls: [toolCall],
+          updatedEvent: activeEvent,
+        });
+      }
+    }
+
+    // 5. TOOL: Event Date, Schedule & Countdown Query
     const isDateScheduleQuery =
       lowerPrompt.includes("when is") ||
       lowerPrompt.includes("when are") ||
@@ -200,7 +442,6 @@ export async function POST(req: NextRequest) {
     if (isDateScheduleQuery) {
       if (activeEvent) {
         const { formatted, diffDays, statusText } = formatCelebrationDate(activeEvent.event_date);
-        const sym = getCurrencySymbol(activeEvent.currency);
 
         const toolCall: ToolCallItem = {
           id: `tool-${Date.now()}`,
@@ -218,7 +459,7 @@ export async function POST(req: NextRequest) {
 
         const responseText = `🗓️ **${activeEvent.title}** is scheduled for **${formatted}**!\n\n### ⏳ Celebration Countdown & Details:\n- **Event Date:** **${formatted}** (\`${activeEvent.event_date}\`)\n- **Timeline Countdown:** ${statusText}\n- **Venue & City:** 📍 **${activeEvent.location}**\n- **Target Guests:** 👥 **${activeEvent.guest_count} guests**\n- **Total Budget:** 💰 **${formatCurrency(activeEvent.total_budget, activeEvent.currency)}**\n- **Atmosphere / Vibe:** ✨ **${activeEvent.vibe || "Celebration Elegance"}**\n\n### 💡 Recommended Next Actions:\n• Ask **"What will the weather be like in ${activeEvent.location} on ${activeEvent.event_date}?"** to get live atmospheric forecasts and rain risk.\n• Ask **"Show me my milestone checklist"** to review what's due this week.\n• Ask **"Show RSVPs"** to inspect confirmed attendee numbers.`;
 
-        return NextResponse.json({
+        return respondWithChat(activeEvent.id, messages, {
           response: responseText,
           toolCalls: [toolCall],
         });
@@ -236,7 +477,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 5. TOOL: Event Location & Venue Query
+    // 6. TOOL: Event Location & Venue Query
     const isLocationQuery =
       lowerPrompt.includes("where is") ||
       lowerPrompt.includes("where will") ||
@@ -266,14 +507,14 @@ export async function POST(req: NextRequest) {
 
         const responseText = `📍 **${activeEvent.title}** will take place in **${activeEvent.location}**!\n\n### 🏛️ Venue & Destination Profile:\n- **City / Region:** **${activeEvent.location}**\n- **Date:** **${formatted}**\n- **Expected Headcount:** **${activeEvent.guest_count} attendees**\n- **Vibe:** **${activeEvent.vibe || "Celebration Elegance"}**\n\n### 💡 What would you like to explore next?\n• Say **"Check the weather in ${activeEvent.location} on ${activeEvent.event_date}"** for precipitation probability and temperature.\n• Say **"Search top venues in ${activeEvent.location}"** for live internet recommendations & pricing benchmarks.\n• Say **"Show vendor checklist"** to review your catering and decor contracts.`;
 
-        return NextResponse.json({
+        return respondWithChat(activeEvent.id, messages, {
           response: responseText,
           toolCalls: [toolCall],
         });
       }
     }
 
-    // 6. TOOL: Executive Overview / Details
+    // 7. TOOL: Executive Overview / Details
     const isOverviewQuery =
       lowerPrompt.includes("overview") ||
       lowerPrompt.includes("summary") ||
@@ -304,14 +545,14 @@ export async function POST(req: NextRequest) {
 
         const responseText = `Here is the complete executive masterplan for **${activeEvent.title}**:\n\n### 🌟 Celebration Snapshot:\n- **Category:** ${(activeEvent.event_type || "Celebration").toUpperCase()}\n- **Scheduled Date:** **${formatted}** (${statusText})\n- **Destination & Venue:** 📍 **${activeEvent.location}**\n- **Target Guests:** 👥 **${activeEvent.guest_count} guests** (${goingCount} confirmed attending)\n- **Total Budget:** 💰 **${formatCurrency(activeEvent.total_budget, activeEvent.currency)}**\n- **Atmosphere & Vibe:** ✨ **${activeEvent.vibe || "Celebration Elegance"}**\n- **Public RSVP Portal:** \`/invite/${activeEvent.slug || activeEvent.id}\`\n\n${activePlan?.eventSummary?.tagline ? `> _"${activePlan.eventSummary.tagline}"_\n\n` : ""}What aspect of your celebration would you like to review or refine right now?`;
 
-        return NextResponse.json({
+        return respondWithChat(activeEvent.id, messages, {
           response: responseText,
           toolCalls: [toolCall],
         });
       }
     }
 
-    // 7. TOOL: Weather Intelligence
+    // 8. TOOL: Weather Intelligence
     const isWeatherQuery =
       lowerPrompt.includes("weather") ||
       lowerPrompt.includes("rain") ||
@@ -325,7 +566,6 @@ export async function POST(req: NextRequest) {
       lowerPrompt.includes("sunset");
 
     if (isWeatherQuery) {
-      // Extract location if specified in prompt, else fallback to activeEvent.location
       let queryLocation = activeEvent?.location || "Mumbai, India";
       const inMatch = userPrompt.match(/in\s+([A-Za-z\s,]+?)(on|for|at|\?|\.|$)/i);
       const forMatch = userPrompt.match(/for\s+([A-Za-z\s,]+?)(on|in|at|\?|\.|$)/i);
@@ -336,7 +576,6 @@ export async function POST(req: NextRequest) {
         queryLocation = forMatch[1].trim();
       }
 
-      // Extract date if specified in prompt, else fallback to activeEvent.event_date
       let queryDate = activeEvent?.event_date || undefined;
       const dateMatch = userPrompt.match(/([0-9]{4}-[0-9]{2}-[0-9]{2})/);
       if (dateMatch) {
@@ -356,7 +595,7 @@ export async function POST(req: NextRequest) {
 
       const responseText = `Here is the comprehensive weather intelligence for **${weatherReport.location}** on **${weatherReport.date}**:\n\n### 🌤️ Forecast & Atmospheric Conditions\n- **Condition:** ${weatherReport.condition}\n- **Daytime High:** ${weatherReport.temperatureC.high}°C (${weatherReport.temperatureF.high}°F)\n- **Evening Low:** ${weatherReport.temperatureC.low}°C (${weatherReport.temperatureF.low}°F)\n- **Precipitation Probability:** ${weatherReport.precipitationProbability}% ${weatherReport.precipitationProbability > 30 ? "⚠️ (Contingency Recommended)" : "✅ (Minimal Risk)"}\n- **Relative Humidity:** ${weatherReport.humidity}%\n- **Wind Speed:** ${weatherReport.windSpeedKmH} km/h\n- **Estimated Sunset:** ${weatherReport.sunsetTime} (Golden Hour window starts ~${weatherReport.sunsetTime.replace(":15", ":30").replace(":45", ":00")})\n\n### 🎯 Outdoor Celebration Suitability: ${weatherReport.outdoorSuitabilityScore} / 10 (${weatherReport.verdict.toUpperCase().replace("_", " ")})\n${weatherReport.actionableAdvice.map((a) => `• ${a}`).join("\n")}\n\n*Would you like me to incorporate indoor/outdoor contingency clauses into your vendor checklist or timeline?*`;
 
-      return NextResponse.json({
+      return respondWithChat(activeEvent?.id, messages, {
         response: responseText,
         toolCalls: [toolCall],
         actionCard: {
@@ -367,7 +606,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 8. TOOL: Web Search & Internet Access
+    // 9. TOOL: Web Search & Internet Access
     const isSearchIntent =
       lowerPrompt.includes("search") ||
       lowerPrompt.includes("browse") ||
@@ -394,7 +633,7 @@ export async function POST(req: NextRequest) {
 
       const responseText = `Here are the curated findings from live internet research:\n\n${searchReport.synthesis}\n\n### 💡 Recommended Next Actions:\n${searchReport.recommendedNextActions.map((a) => `• ${a}`).join("\n")}\n\n*Would you like me to add any of these to your celebration checklist or calculate an updated budget allocation in ${activeCurrency}?*`;
 
-      return NextResponse.json({
+      return respondWithChat(activeEvent?.id, messages, {
         response: responseText,
         toolCalls: [toolCall],
         actionCard: {
@@ -405,7 +644,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 9. TOOL: Create Event / Plan Event Intent
+    // 10. TOOL: Create Event / Plan Event Intent
     const isCreateIntent =
       (lowerPrompt.includes("plan") ||
         lowerPrompt.includes("create") ||
@@ -431,7 +670,6 @@ export async function POST(req: NextRequest) {
       else if (lowerPrompt.includes("anniversary")) eventType = "anniversary";
       else if (lowerPrompt.includes("corporate")) eventType = "corporate";
 
-      // Currency detection during creation
       let eventCurrency = "USD";
       if (
         lowerPrompt.includes("inr") ||
@@ -448,10 +686,8 @@ export async function POST(req: NextRequest) {
         eventCurrency = "GBP";
       }
 
-      // Budget extraction
       let budget = eventCurrency === "INR" ? 500000 : 10000;
 
-      // Check for Lakh/Crore in INR
       const lakhMatch = userPrompt.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:lakh|lac|l)/i);
       const croreMatch = userPrompt.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:crore|cr)/i);
 
@@ -476,7 +712,6 @@ export async function POST(req: NextRequest) {
         else if (lowerPrompt.includes("25k")) budget = 25000;
       }
 
-      // Guest count extraction
       let guests = 75;
       const guestMatch = userPrompt.match(/([0-9]+)\s*(guests|people|attendees|persons)/i);
       if (guestMatch) {
@@ -484,14 +719,12 @@ export async function POST(req: NextRequest) {
         if (!isNaN(g) && g > 0) guests = g;
       }
 
-      // Location extraction
       let location = eventCurrency === "INR" ? "Goa, India" : "San Francisco, CA";
       const locMatch = userPrompt.match(/in\s+([A-Za-z\s,]+?)(with|for|[\$₹€£]|on|\.|$)/i);
       if (locMatch && locMatch[1].trim().length > 2) {
         location = locMatch[1].trim();
       }
 
-      // Title & Vibe
       const organizer = userName || "Celebration Host";
       const title = `${organizer}'s ${eventType.charAt(0).toUpperCase() + eventType.slice(1)} Celebration`;
       const vibe = lowerPrompt.includes("chic")
@@ -553,7 +786,7 @@ export async function POST(req: NextRequest) {
 
       const responseText = `🎉 I've created and saved your celebration masterplan for **${title}** in Cloudflare D1!\n\nHere is a summary of what I've configured:\n- **Location:** ${location}\n- **Date:** ${dateStr}\n- **Target Guests:** ${guests} guests\n- **Total Budget:** ${formattedTotal} (100% mathematically balanced across ${generated.plan.budgetBreakdown.length} categories)\n- **Currency:** ${eventCurrency} (${newSym})\n- **Milestone Timeline:** ${generated.plan.timeline.length} phased checkpoints from concept through celebration day.\n\nYou can review the breakdown below or jump directly to your interactive Command Center:`;
 
-      return NextResponse.json({
+      return respondWithChat(newId, messages, {
         response: responseText,
         toolCalls: [toolCall],
         actionCard: {
@@ -576,7 +809,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 10. TOOL: Budget & Expense Queries
+    // 11. TOOL: Budget & Expense Queries
     if (
       lowerPrompt.includes("budget") ||
       lowerPrompt.includes("spent") ||
@@ -614,7 +847,7 @@ export async function POST(req: NextRequest) {
           )
           .join("\n")}\n\n*Tip: You can edit 'Actual Spent' directly in the Command Center or tell me to 'Cut catering budget by 10%'.*`;
 
-        return NextResponse.json({
+        return respondWithChat(activeEvent.id, messages, {
           response: responseText,
           toolCalls: [toolCall],
           actionCard: {
@@ -632,7 +865,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 11. TOOL: RSVP & Guest Queries
+    // 12. TOOL: RSVP & Guest Queries
     if (
       lowerPrompt.includes("rsvp") ||
       lowerPrompt.includes("guest") ||
@@ -660,7 +893,7 @@ export async function POST(req: NextRequest) {
 
         const responseText = `Current RSVP pulse for **${activeEvent.title}**:\n\n- 🎉 **Confirmed Attending:** ${goingCount} / ${activeEvent.guest_count} guests\n- 🤔 **Tentative (Maybe):** ${maybe.length} parties\n- 💌 **Declined:** ${declined.length}\n\n${activeRsvps.length > 0 ? `### Latest Guest Responses:\n${activeRsvps.slice(0, 3).map((r) => `• **${r.guest_name}** (${r.status.toUpperCase()}) — ${r.attendees_count} guest(s)${r.dietary_notes ? ` • Dietary: ${r.dietary_notes}` : ""}`).join("\n")}\n\n` : `_No guest responses recorded yet._\n\n`}**Shareable Public Invite Link:**\n\`/invite/${activeEvent.slug || activeEvent.id}\``;
 
-        return NextResponse.json({
+        return respondWithChat(activeEvent.id, messages, {
           response: responseText,
           toolCalls: [toolCall],
           actionCard: {
@@ -679,7 +912,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 12. TOOL: Timeline & Milestone Queries
+    // 13. TOOL: Timeline & Milestone Queries
     if (
       lowerPrompt.includes("timeline") ||
       lowerPrompt.includes("milestone") ||
@@ -705,7 +938,7 @@ export async function POST(req: NextRequest) {
 
         const responseText = `Here is the milestone schedule for **${activeEvent.title}** (${completed}/${milestones.length} completed):\n\n${milestones.map((m: any) => `${m.completed ? "✅" : "⏳"} **[${m.priority || "Medium"}] ${m.taskTitle}** (${m.timeframe})\n  _${m.description}_`).join("\n\n")}`;
 
-        return NextResponse.json({
+        return respondWithChat(activeEvent.id, messages, {
           response: responseText,
           toolCalls: [toolCall],
           actionCard: {
@@ -720,7 +953,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 13. TOOL: Creative Ideas, Themes, Food, Music
+    // 14. TOOL: Creative Ideas, Themes, Food, Music
     const isIdeasQuery =
       lowerPrompt.includes("idea") ||
       lowerPrompt.includes("ideas") ||
@@ -769,7 +1002,7 @@ export async function POST(req: NextRequest) {
         )
         .join("\n\n")}\n\n*Would you like me to add any of these ideas to your milestone checklist or allocate a budget line item in ${activeEvent.currency}?*`;
 
-      return NextResponse.json({
+      return respondWithChat(activeEvent.id, messages, {
         response: responseText,
         toolCalls: [toolCall],
         actionCard: {
@@ -780,7 +1013,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 14. TOOL: Public Invite Link Query
+    // 15. TOOL: Public Invite Link Query
     const isInviteQuery =
       lowerPrompt.includes("invite link") ||
       lowerPrompt.includes("how to invite") ||
@@ -790,12 +1023,12 @@ export async function POST(req: NextRequest) {
 
     if (isInviteQuery && activeEvent) {
       const inviteUrl = `/invite/${activeEvent.slug || activeEvent.id}`;
-      return NextResponse.json({
+      return respondWithChat(activeEvent.id, messages, {
         response: `💌 Here is your shareable public invite portal for **${activeEvent.title}**:\n\n🔗 **[${inviteUrl}](${inviteUrl})**\n\nGuests can use this link to confirm their attendance, record dietary restrictions, and leave personal notes for the host. All RSVPs update your live dashboard and Concierge pulse instantly!`,
       });
     }
 
-    // 15. General LLM call if OpenAI or Gemini API key is present
+    // 16. General LLM call if OpenAI or Gemini API key is present
     const customHeaderKey = req.headers.get("x-openai-key") || req.headers.get("x-gemini-key");
     const bindings = await getAppBindings();
     const effectiveKey =
@@ -822,7 +1055,6 @@ Active Currency: ${activeCurrency} (Symbol: ${currSym}).
 User Celebrations: ${userEvents.map((e) => e.title).join(", ")}.
 Answer warmly, professionally, and concisely in markdown with actionable tips. Always format monetary values using the active currency symbol (${currSym}). When asked about date, location, or budget, provide exact details from the active celebration.`;
 
-        // Check if Gemini key (starts with AIza)
         if (effectiveKey.startsWith("AIza")) {
           const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${effectiveKey}`;
           const geminiRes = await fetch(geminiUrl, {
@@ -848,10 +1080,11 @@ Answer warmly, professionally, and concisely in markdown with actionable tips. A
           if (geminiRes.ok) {
             const data = (await geminiRes.json()) as any;
             const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (reply) return NextResponse.json({ response: reply });
+            if (reply) {
+              return respondWithChat(activeEvent?.id, messages, { response: reply });
+            }
           }
         } else {
-          // OpenAI Call
           const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -874,7 +1107,7 @@ Answer warmly, professionally, and concisely in markdown with actionable tips. A
             const aiText =
               json.choices?.[0]?.message?.content ||
               "I am ready to help you coordinate your celebrations.";
-            return NextResponse.json({ response: aiText });
+            return respondWithChat(activeEvent?.id, messages, { response: aiText });
           }
         }
       } catch (llmErr) {
@@ -882,14 +1115,14 @@ Answer warmly, professionally, and concisely in markdown with actionable tips. A
       }
     }
 
-    // 16. Natural Conversational Default with Event Awareness
+    // 17. Natural Conversational Default with Event Awareness
     if (activeEvent) {
       const { formatted, diffDays, statusText } = formatCelebrationDate(activeEvent.event_date);
       const greeting = userName ? `Hello **${userName}**!` : "Hello!";
 
-      return NextResponse.json({
-        response: `${greeting} I'm actively coordinating **${activeEvent.title}** (${(activeEvent.event_type || "Celebration").toUpperCase()} in **${activeEvent.location}** on **${formatted}**).\n\n### 📋 Active Celebration Status:\n- **Event Date:** 🗓️ **${formatted}** (${statusText})\n- **Location:** 📍 **${activeEvent.location}**\n- **Target Guests:** 👥 **${activeEvent.guest_count} attendees**\n- **Financial Ledger:** 💰 **${formatCurrency(activeEvent.total_budget, activeEvent.currency)}**\n- **Vibe:** ✨ **${activeEvent.vibe || "Celebration Elegance"}**\n\nHow can I help you today? You can ask me:\n- *"When is my event?"* or *"Where is my event?"*\n- *"What will the weather be like in ${activeEvent.location}?"*\n- *"What's our budget breakdown?"* or *"Show RSVP pulse"*\n- *"Give me creative decor & theme ideas"*`,
-      });
+      const defaultText = `${greeting} I'm actively coordinating **${activeEvent.title}** (${(activeEvent.event_type || "Celebration").toUpperCase()} in **${activeEvent.location}** on **${formatted}**).\n\n### 📋 Active Celebration Status:\n- **Event Date:** 🗓️ **${formatted}** (${statusText})\n- **Location:** 📍 **${activeEvent.location}**\n- **Target Guests:** 👥 **${activeEvent.guest_count} attendees**\n- **Financial Ledger:** 💰 **${formatCurrency(activeEvent.total_budget, activeEvent.currency)}**\n- **Vibe:** ✨ **${activeEvent.vibe || "Celebration Elegance"}**\n\nHow can I help you today? You can ask me:\n- *"When is my event?"* or *"Where is my event?"*\n- *"What will the weather be like in ${activeEvent.location}?"*\n- *"What's our budget breakdown?"* or *"Show RSVP pulse"*\n- *"Change location to Jaipur"* or *"Increase budget to ₹20 Lakhs"*`;
+
+      return respondWithChat(activeEvent.id, messages, { response: defaultText });
     }
 
     return NextResponse.json({

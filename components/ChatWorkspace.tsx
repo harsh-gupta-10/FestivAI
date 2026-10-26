@@ -45,9 +45,12 @@ import {
   Database,
   RotateCcw,
   FileText,
+  Trash2,
+  Edit3,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { OrganizerWizard } from "@/components/OrganizerWizard";
+import { EditEventModal } from "@/components/EditEventModal";
 import { formatCurrency, getCurrencySymbol, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import confetti from "canvas-confetti";
 
@@ -141,6 +144,8 @@ export function ChatWorkspace({
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
 
 
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
   // Proactive Notification state
   const [activeAlerts, setActiveAlerts] = useState<ProactiveAlert[]>([]);
 
@@ -175,7 +180,7 @@ export function ChatWorkspace({
   // Active event object
   const activeEvent = events.find((e) => e.id === activeEventId) || events[0] || null;
 
-  // 2. Real Dynamic Proactive Alerts & Welcome message
+  // 2. Real Dynamic Proactive Alerts & Persistent Chat History
   useEffect(() => {
     const hostName = user?.displayName || user?.email?.split("@")[0] || "Organizer";
 
@@ -233,16 +238,54 @@ export function ChatWorkspace({
         })
         .catch(() => {});
 
-      const welcomeText = `Hello **${hostName}**! Welcome to your FestivAI Concierge.\n\nActive celebration: **${activeEvent.title}** (${activeEvent.location}, ${activeEvent.event_date}). You can query budgets, track RSVPs, adjust timelines, or say **"Plan a 30th Birthday rooftop party in Chicago with $6,000 for 50 guests"** to create a new celebration!`;
+      // Restore chat history from local cache or Cloudflare D1
+      let restoredFromCache = false;
+      if (typeof window !== "undefined") {
+        const cached = localStorage.getItem(`festivai_chat_${activeEvent.id}`);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMessages(parsed);
+              restoredFromCache = true;
+            }
+          } catch {}
+        }
+      }
 
-      setMessages([
-        {
-          id: "msg-welcome",
-          role: "assistant",
-          content: welcomeText,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      fetch(`/api/chat?eventId=${encodeURIComponent(activeEvent.id)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: any) => {
+          if (data?.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+            setMessages(data.messages);
+            if (typeof window !== "undefined") {
+              localStorage.setItem(`festivai_chat_${activeEvent.id}`, JSON.stringify(data.messages));
+            }
+          } else if (!restoredFromCache) {
+            const welcomeText = `Hello **${hostName}**! Welcome to your FestivAI Concierge.\n\nActive celebration: **${activeEvent.title}** (${activeEvent.location}, ${activeEvent.event_date}). You can query budgets, track RSVPs, adjust timelines, or say **"Change location to Jaipur"** to modify celebration parameters directly!`;
+            setMessages([
+              {
+                id: "msg-welcome",
+                role: "assistant",
+                content: welcomeText,
+                createdAt: new Date().toISOString(),
+              },
+            ]);
+          }
+        })
+        .catch(() => {
+          if (!restoredFromCache) {
+            const welcomeText = `Hello **${hostName}**! Welcome to your FestivAI Concierge.\n\nActive celebration: **${activeEvent.title}** (${activeEvent.location}, ${activeEvent.event_date}).`;
+            setMessages([
+              {
+                id: "msg-welcome",
+                role: "assistant",
+                content: welcomeText,
+                createdAt: new Date().toISOString(),
+              },
+            ]);
+          }
+        });
     } else {
       setActiveAlerts([
         {
@@ -266,7 +309,39 @@ export function ChatWorkspace({
         },
       ]);
     }
-  }, [activeEventId, activeEvent, user]);
+  }, [activeEventId, user]);
+
+  // Clear chat conversation
+  const handleClearChat = async () => {
+    if (!activeEvent) return;
+    const confirmClear = window.confirm(`Clear chat conversation for "${activeEvent.title}"?`);
+    if (!confirmClear) return;
+
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(`festivai_chat_${activeEvent.id}`);
+    }
+
+    try {
+      await fetch(`/api/chat?eventId=${encodeURIComponent(activeEvent.id)}`, { method: "DELETE" });
+    } catch {}
+
+    const hostName = user?.displayName || user?.email?.split("@")[0] || "Organizer";
+    const welcomeText = `Hello **${hostName}**! Chat conversation for **${activeEvent.title}** has been cleared.\n\nHow can I help you coordinate today?`;
+    setMessages([
+      {
+        id: `msg-welcome-${Date.now()}`,
+        role: "assistant",
+        content: welcomeText,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+  };
+
+  // Callback when event is updated via modal
+  const handleEventUpdated = (updated: any) => {
+    setEvents((prev) => prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e)));
+    fetchEvents();
+  };
 
   // Scroll to bottom on message updates
   useEffect(() => {
@@ -325,7 +400,26 @@ export function ChatWorkspace({
         actionCard: data.actionCard,
       };
 
-      setMessages((prev) => [...prev, assistantMsg]);
+      const updatedConversation = [...nextMessages, assistantMsg];
+      setMessages(updatedConversation);
+
+      if (activeEvent && typeof window !== "undefined") {
+        localStorage.setItem(`festivai_chat_${activeEvent.id}`, JSON.stringify(updatedConversation));
+      }
+
+      // If an event detail was updated conversationally, sync state & confetti
+      if (data.updatedEvent) {
+        setEvents((prev) =>
+          prev.map((e) => (e.id === data.updatedEvent.id ? { ...e, ...data.updatedEvent } : e))
+        );
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.6 },
+          colors: ["#714cb6", "#421d24", "#d4c7ff"],
+        });
+        await fetchEvents();
+      }
 
       // If currency was changed, reload events to sync all numbers and icons
       if (data.toolCalls?.some((t: any) => t.tool === "currency_switch")) {
@@ -761,15 +855,28 @@ export function ChatWorkspace({
                     </div>
                   </div>
 
-                  {/* Quick Action: Jump to Full Command Center */}
-                  <Link
-                    href={`/events/${ev.id}/dashboard`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute right-2 top-2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-white text-[#666666] hover:text-[#421d24] transition-all border border-transparent hover:border-[#e3e3e2]"
-                    title="Open Event Command Center"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </Link>
+                  {/* Quick Action: Edit Details & Command Center */}
+                  <div className="absolute right-2 top-2 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveEventId(ev.id);
+                        setIsEditModalOpen(true);
+                      }}
+                      className="p-1 rounded-md hover:bg-white text-[#666666] hover:text-[#714cb6] transition-all border border-transparent hover:border-[#e3e3e2]"
+                      title="Edit Celebration Details"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <Link
+                      href={`/events/${ev.id}/dashboard`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="p-1 rounded-md hover:bg-white text-[#666666] hover:text-[#421d24] transition-all border border-transparent hover:border-[#e3e3e2]"
+                      title="Open Event Command Center"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
                 </div>
               );
             })
@@ -861,6 +968,14 @@ export function ChatWorkspace({
                   <span>Command Center</span>
                   <ExternalLink className="w-3 h-3" />
                 </Link>
+                <button
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-white hover:bg-[#f8f7f4] border border-[#e3e3e2] text-xs font-[460] text-[#714cb6] transition-colors shadow-2xs"
+                  title="Edit Celebration Parameters in Cloudflare D1"
+                >
+                  <Edit3 className="w-3 h-3 text-[#714cb6]" />
+                  <span className="hidden md:inline">Edit Details</span>
+                </button>
               </div>
             ) : (
               <span className="text-xs text-[#666666]">FestivAI Intelligent Concierge</span>
@@ -893,6 +1008,16 @@ export function ChatWorkspace({
               <Sparkles className="w-3 h-3" />
               <span>{selectedModel}</span>
             </span>
+
+            {activeEvent && (
+              <button
+                onClick={handleClearChat}
+                className="p-1.5 rounded-lg border border-[#e3e3e2] bg-white text-[#666666] hover:text-[#421d24] hover:bg-[#f2f0eb] transition-colors"
+                title="Clear conversation history"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
 
             <button
               onClick={onToggleInspector}
@@ -1767,6 +1892,15 @@ export function ChatWorkspace({
           </div>
         </div>
       )}
+
+      {/* ----------------- EDIT EVENT MODAL ----------------- */}
+      <EditEventModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        event={activeEvent}
+        userEmail={user?.email || undefined}
+        onEventUpdated={handleEventUpdated}
+      />
     </div>
   );
 }

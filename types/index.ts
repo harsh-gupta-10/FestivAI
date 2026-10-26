@@ -25,6 +25,7 @@ export interface EventRecord {
   banner_r2_key?: string | null;
   ai_plan_json: string;
   last_prompt?: string | null;
+  chat_history_json?: string | null;
   created_at: string;
 }
 

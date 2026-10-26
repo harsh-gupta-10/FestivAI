@@ -132,4 +132,41 @@ test("Conversational Chat & Planning Intelligence Suite", async (t) => {
     const newOrganizerEvents: any[] = [];
     assert.equal(newOrganizerEvents.length, 0);
   });
+
+  await t.test("parses conversational event edits (location, budget, guests, date, title)", () => {
+    // 1. Location
+    const locPrompt = "Please change the venue location to Jodhpur, Rajasthan";
+    const locMatch = locPrompt.match(
+      /(?:change|update|set|move)\s+(?:the\s+)?(?:venue\s+location|event\s+location|location|venue|city|destination)\s+(?:to|in)\s+([^.!?\n]+)/i
+    );
+    assert.ok(locMatch);
+    assert.equal(locMatch[1].trim(), "Jodhpur, Rajasthan");
+
+    // 2. Budget with Lakh
+    const budgetPrompt = "change budget to ₹30 Lakhs";
+    const lakhMatch = budgetPrompt.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:lakh|lac|l)/i);
+    assert.ok(lakhMatch);
+    const parsedBudget = parseFloat(lakhMatch[1]) * 100000;
+    assert.equal(parsedBudget, 3000000);
+
+    // 3. Guest count
+    const guestPrompt = "increase guest count to 220";
+    const guestMatch = guestPrompt.match(
+      /(?:change|update|set|increase|decrease)\s+(?:the\s+)?(?:guest\s+count|guests|headcount)\s+to\s+([0-9]+)/i
+    );
+    assert.ok(guestMatch);
+    assert.equal(parseInt(guestMatch[1], 10), 220);
+
+    // 4. Date reschedule
+    const datePrompt = "reschedule to 2026-12-05";
+    const dateMatch = datePrompt.match(/([0-9]{4}-[0-9]{2}-[0-9]{2})/);
+    assert.ok(dateMatch);
+    assert.equal(dateMatch[1], "2026-12-05");
+
+    // 5. Title rename
+    const titlePrompt = "rename celebration to Royal Heritage Jodhpur Gala";
+    const titleMatch = titlePrompt.match(/rename\s+(?:the\s+)?(?:celebration\s+|event\s+)?to\s+([^.!?\n]+)/i);
+    assert.ok(titleMatch);
+    assert.equal(titleMatch[1].trim(), "Royal Heritage Jodhpur Gala");
+  });
 });
