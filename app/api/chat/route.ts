@@ -11,6 +11,7 @@ import { generateMasterplan } from "@/lib/openai";
 import { getWeatherIntelligence, WeatherReport } from "@/lib/tools/weather";
 import { searchWebIntelligence, WebSearchReport } from "@/lib/tools/web-search";
 import { formatCurrency, getCurrencySymbol } from "@/lib/currency";
+import { formatCelebrationDate } from "@/lib/date";
 
 export interface ToolCallItem {
   id: string;
@@ -45,11 +46,13 @@ export interface ChatMessage {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { messages, eventId, userEmail, userName } = body as {
+    const { messages, eventId, userEmail, userName, apiKey: clientBodyKey, model } = body as {
       messages: ChatMessage[];
       eventId?: string;
       userEmail?: string;
       userName?: string;
+      apiKey?: string;
+      model?: string;
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -61,8 +64,8 @@ export async function POST(req: NextRequest) {
     const lowerPrompt = userPrompt.toLowerCase();
 
     // 1. Fetch current active event details if selected
-    let activeEvent = null;
-    let activePlan = null;
+    let activeEvent: any = null;
+    let activePlan: any = null;
     let activeRsvps: any[] = [];
 
     if (eventId) {
@@ -76,6 +79,16 @@ export async function POST(req: NextRequest) {
 
     // 2. Fetch all user events for contextual awareness
     const userEvents = await getEventsByOrganizerEmail(userEmail);
+
+    // If activeEvent wasn't found by ID but user has events, auto-bind to the primary event
+    if (!activeEvent && userEvents.length > 0) {
+      const primaryData = await getEventByIdOrSlug(userEvents[0].id);
+      if (primaryData) {
+        activeEvent = primaryData.event;
+        activePlan = primaryData.plan;
+        activeRsvps = await getRsvpsForEvent(primaryData.event.id);
+      }
+    }
 
     const activeCurrency = activeEvent?.currency || "USD";
     const currSym = getCurrencySymbol(activeCurrency);
@@ -164,7 +177,141 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. TOOL: Weather Intelligence
+    // 4. TOOL: Event Date, Schedule & Countdown Query
+    const isDateScheduleQuery =
+      lowerPrompt.includes("when is") ||
+      lowerPrompt.includes("when are") ||
+      lowerPrompt.includes("what date") ||
+      lowerPrompt.includes("what is the date") ||
+      lowerPrompt.includes("event date") ||
+      lowerPrompt.includes("celebration date") ||
+      lowerPrompt.includes("date of") ||
+      lowerPrompt.includes("how many days") ||
+      lowerPrompt.includes("days left") ||
+      lowerPrompt.includes("days to go") ||
+      lowerPrompt.includes("countdown") ||
+      lowerPrompt.includes("schedule") ||
+      lowerPrompt.includes("calendar") ||
+      lowerPrompt.includes("timing") ||
+      lowerPrompt === "when" ||
+      lowerPrompt === "date" ||
+      (lowerPrompt.startsWith("when") && !lowerPrompt.includes("plan"));
+
+    if (isDateScheduleQuery) {
+      if (activeEvent) {
+        const { formatted, diffDays, statusText } = formatCelebrationDate(activeEvent.event_date);
+        const sym = getCurrencySymbol(activeEvent.currency);
+
+        const toolCall: ToolCallItem = {
+          id: `tool-${Date.now()}`,
+          tool: "sync_d1",
+          title: `Schedule Intelligence: ${activeEvent.title}`,
+          summary: `${formatted} (${diffDays >= 0 ? `${diffDays} days remaining` : `${Math.abs(diffDays)} days ago`}) • ${activeEvent.location}`,
+          data: {
+            date: activeEvent.event_date,
+            formatted,
+            diffDays,
+            location: activeEvent.location,
+          },
+          status: "completed",
+        };
+
+        const responseText = `🗓️ **${activeEvent.title}** is scheduled for **${formatted}**!\n\n### ⏳ Celebration Countdown & Details:\n- **Event Date:** **${formatted}** (\`${activeEvent.event_date}\`)\n- **Timeline Countdown:** ${statusText}\n- **Venue & City:** 📍 **${activeEvent.location}**\n- **Target Guests:** 👥 **${activeEvent.guest_count} guests**\n- **Total Budget:** 💰 **${formatCurrency(activeEvent.total_budget, activeEvent.currency)}**\n- **Atmosphere / Vibe:** ✨ **${activeEvent.vibe || "Celebration Elegance"}**\n\n### 💡 Recommended Next Actions:\n• Ask **"What will the weather be like in ${activeEvent.location} on ${activeEvent.event_date}?"** to get live atmospheric forecasts and rain risk.\n• Ask **"Show me my milestone checklist"** to review what's due this week.\n• Ask **"Show RSVPs"** to inspect confirmed attendee numbers.`;
+
+        return NextResponse.json({
+          response: responseText,
+          toolCalls: [toolCall],
+        });
+      } else if (userEvents.length > 0) {
+        const listText = userEvents
+          .map((e) => {
+            const { formatted, statusText } = formatCelebrationDate(e.event_date);
+            return `• **${e.title}:** ${formatted} (${statusText}) in **${e.location}**`;
+          })
+          .join("\n");
+
+        return NextResponse.json({
+          response: `Here are the scheduled dates for your organized celebrations:\n\n${listText}\n\n*Click on any celebration in the sidebar to inspect its detailed masterplan.*`,
+        });
+      }
+    }
+
+    // 5. TOOL: Event Location & Venue Query
+    const isLocationQuery =
+      lowerPrompt.includes("where is") ||
+      lowerPrompt.includes("where will") ||
+      lowerPrompt.includes("what location") ||
+      lowerPrompt.includes("what is the location") ||
+      lowerPrompt.includes("what is the venue") ||
+      lowerPrompt.includes("what venue") ||
+      lowerPrompt.includes("venue address") ||
+      lowerPrompt.includes("event location") ||
+      lowerPrompt.includes("which city") ||
+      lowerPrompt === "where" ||
+      lowerPrompt === "location" ||
+      lowerPrompt === "venue";
+
+    if (isLocationQuery) {
+      if (activeEvent) {
+        const { formatted } = formatCelebrationDate(activeEvent.event_date);
+
+        const toolCall: ToolCallItem = {
+          id: `tool-${Date.now()}`,
+          tool: "sync_d1",
+          title: `Location Intelligence: ${activeEvent.title}`,
+          summary: `City/Venue: ${activeEvent.location} • Target: ${activeEvent.guest_count} guests`,
+          data: { location: activeEvent.location, guestCount: activeEvent.guest_count },
+          status: "completed",
+        };
+
+        const responseText = `📍 **${activeEvent.title}** will take place in **${activeEvent.location}**!\n\n### 🏛️ Venue & Destination Profile:\n- **City / Region:** **${activeEvent.location}**\n- **Date:** **${formatted}**\n- **Expected Headcount:** **${activeEvent.guest_count} attendees**\n- **Vibe:** **${activeEvent.vibe || "Celebration Elegance"}**\n\n### 💡 What would you like to explore next?\n• Say **"Check the weather in ${activeEvent.location} on ${activeEvent.event_date}"** for precipitation probability and temperature.\n• Say **"Search top venues in ${activeEvent.location}"** for live internet recommendations & pricing benchmarks.\n• Say **"Show vendor checklist"** to review your catering and decor contracts.`;
+
+        return NextResponse.json({
+          response: responseText,
+          toolCalls: [toolCall],
+        });
+      }
+    }
+
+    // 6. TOOL: Executive Overview / Details
+    const isOverviewQuery =
+      lowerPrompt.includes("overview") ||
+      lowerPrompt.includes("summary") ||
+      lowerPrompt.includes("tell me about") ||
+      lowerPrompt.includes("what is my event") ||
+      lowerPrompt.includes("about my event") ||
+      lowerPrompt.includes("event details") ||
+      lowerPrompt.includes("celebration details") ||
+      lowerPrompt.includes("event info") ||
+      lowerPrompt === "details" ||
+      lowerPrompt === "info" ||
+      lowerPrompt === "overview";
+
+    if (isOverviewQuery) {
+      if (activeEvent) {
+        const { formatted, diffDays, statusText } = formatCelebrationDate(activeEvent.event_date);
+        const going = activeRsvps.filter((r) => r.status === "going");
+        const goingCount = going.reduce((acc, r) => acc + (r.attendees_count || 1), 0);
+
+        const toolCall: ToolCallItem = {
+          id: `tool-${Date.now()}`,
+          tool: "sync_d1",
+          title: `Masterplan Briefing: ${activeEvent.title}`,
+          summary: `${(activeEvent.event_type || "Celebration").toUpperCase()} • ${formatted} (${diffDays}d) • ${activeEvent.location} • ${formatCurrency(activeEvent.total_budget, activeEvent.currency)}`,
+          data: activeEvent,
+          status: "completed",
+        };
+
+        const responseText = `Here is the complete executive masterplan for **${activeEvent.title}**:\n\n### 🌟 Celebration Snapshot:\n- **Category:** ${(activeEvent.event_type || "Celebration").toUpperCase()}\n- **Scheduled Date:** **${formatted}** (${statusText})\n- **Destination & Venue:** 📍 **${activeEvent.location}**\n- **Target Guests:** 👥 **${activeEvent.guest_count} guests** (${goingCount} confirmed attending)\n- **Total Budget:** 💰 **${formatCurrency(activeEvent.total_budget, activeEvent.currency)}**\n- **Atmosphere & Vibe:** ✨ **${activeEvent.vibe || "Celebration Elegance"}**\n- **Public RSVP Portal:** \`/invite/${activeEvent.slug || activeEvent.id}\`\n\n${activePlan?.eventSummary?.tagline ? `> _"${activePlan.eventSummary.tagline}"_\n\n` : ""}What aspect of your celebration would you like to review or refine right now?`;
+
+        return NextResponse.json({
+          response: responseText,
+          toolCalls: [toolCall],
+        });
+      }
+    }
+
+    // 7. TOOL: Weather Intelligence
     const isWeatherQuery =
       lowerPrompt.includes("weather") ||
       lowerPrompt.includes("rain") ||
@@ -179,7 +326,7 @@ export async function POST(req: NextRequest) {
 
     if (isWeatherQuery) {
       // Extract location if specified in prompt, else fallback to activeEvent.location
-      let queryLocation = activeEvent?.location || "Goa, India";
+      let queryLocation = activeEvent?.location || "Mumbai, India";
       const inMatch = userPrompt.match(/in\s+([A-Za-z\s,]+?)(on|for|at|\?|\.|$)/i);
       const forMatch = userPrompt.match(/for\s+([A-Za-z\s,]+?)(on|in|at|\?|\.|$)/i);
 
@@ -220,7 +367,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 5. TOOL: Web Search & Internet Access
+    // 8. TOOL: Web Search & Internet Access
     const isSearchIntent =
       lowerPrompt.includes("search") ||
       lowerPrompt.includes("browse") ||
@@ -230,7 +377,6 @@ export async function POST(req: NextRequest) {
       lowerPrompt.includes("photographer") ||
       lowerPrompt.includes("vendor rates") ||
       lowerPrompt.includes("trends") ||
-      lowerPrompt.includes("ideas for") ||
       lowerPrompt.includes("recommend venue") ||
       lowerPrompt.includes("top venues");
 
@@ -259,7 +405,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 6. TOOL: Create Event / Plan Event Intent
+    // 9. TOOL: Create Event / Plan Event Intent
     const isCreateIntent =
       (lowerPrompt.includes("plan") ||
         lowerPrompt.includes("create") ||
@@ -430,14 +576,17 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 7. TOOL: Budget Query
+    // 10. TOOL: Budget & Expense Queries
     if (
       lowerPrompt.includes("budget") ||
       lowerPrompt.includes("spent") ||
       lowerPrompt.includes("cost") ||
       lowerPrompt.includes("money") ||
       lowerPrompt.includes("saving") ||
-      lowerPrompt.includes("ledger")
+      lowerPrompt.includes("ledger") ||
+      lowerPrompt.includes("expense") ||
+      lowerPrompt.includes("price") ||
+      lowerPrompt.includes("how much")
     ) {
       if (activeEvent && activePlan) {
         const totalAlloc =
@@ -483,12 +632,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 8. TOOL: RSVP / Guest Queries
+    // 11. TOOL: RSVP & Guest Queries
     if (
       lowerPrompt.includes("rsvp") ||
       lowerPrompt.includes("guest") ||
       lowerPrompt.includes("who is coming") ||
-      lowerPrompt.includes("attend")
+      lowerPrompt.includes("attend") ||
+      lowerPrompt.includes("attendance") ||
+      lowerPrompt.includes("headcount") ||
+      lowerPrompt.includes("invited") ||
+      lowerPrompt.includes("dietary")
     ) {
       if (activeEvent) {
         const going = activeRsvps.filter((r) => r.status === "going");
@@ -526,14 +679,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 9. TOOL: Timeline / Milestone Queries
+    // 12. TOOL: Timeline & Milestone Queries
     if (
       lowerPrompt.includes("timeline") ||
       lowerPrompt.includes("milestone") ||
       lowerPrompt.includes("schedule") ||
       lowerPrompt.includes("what next") ||
       lowerPrompt.includes("to do") ||
-      lowerPrompt.includes("task")
+      lowerPrompt.includes("todo") ||
+      lowerPrompt.includes("task") ||
+      lowerPrompt.includes("checklist")
     ) {
       if (activeEvent && activePlan) {
         const milestones = activePlan.timeline || [];
@@ -565,16 +720,99 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 10. General LLM call if OpenAI API key is present
-    const bindings = await getAppBindings();
-    const apiKey = bindings.OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    // 13. TOOL: Creative Ideas, Themes, Food, Music
+    const isIdeasQuery =
+      lowerPrompt.includes("idea") ||
+      lowerPrompt.includes("ideas") ||
+      lowerPrompt.includes("theme") ||
+      lowerPrompt.includes("decor") ||
+      lowerPrompt.includes("food") ||
+      lowerPrompt.includes("menu") ||
+      lowerPrompt.includes("catering") ||
+      lowerPrompt.includes("music") ||
+      lowerPrompt.includes("playlist") ||
+      lowerPrompt.includes("entertainment") ||
+      lowerPrompt.includes("activities") ||
+      lowerPrompt.includes("cocktail") ||
+      lowerPrompt.includes("drinks") ||
+      lowerPrompt.includes("dress code");
 
-    if (apiKey) {
+    if (isIdeasQuery && activeEvent) {
+      const ideas = activePlan?.personalizedIdeas || [
+        {
+          title: "Golden Hour Signature Lounge",
+          concept: `Curated outdoor lounge setup in ${activeEvent.location} with warm amber accent lighting, ambient jazz, and custom welcome refreshments.`,
+          estimatedImpact: "High",
+          budgetTier: "$$",
+        },
+        {
+          title: "Interactive Guest Memory Wall",
+          concept: "Instant polaroid station with metallic ink guestbook and digital QR upload gallery.",
+          estimatedImpact: "Medium",
+          budgetTier: "$",
+        },
+      ];
+
+      const toolCall: ToolCallItem = {
+        id: `tool-${Date.now()}`,
+        tool: "sync_d1",
+        title: `Curated Ideas: ${activeEvent.title}`,
+        summary: `${ideas.length} custom concepts tailored for ${activeEvent.vibe || "Celebration Elegance"} in ${activeEvent.location}`,
+        data: ideas,
+        status: "completed",
+      };
+
+      const responseText = `Here are personalized creative concepts for **${activeEvent.title}** (${activeEvent.vibe || "Celebration Elegance"} in ${activeEvent.location}):\n\n${ideas
+        .map(
+          (idea: any, idx: number) =>
+            `${idx + 1}. ✨ **${idea.title}** (${idea.budgetTier || idea.budgetImpact || "$$"})\n   ${idea.description || idea.concept || "Curated celebration concept."}\n   _Impact: ${idea.estimatedImpact || idea.budgetImpact || "High"}_`
+        )
+        .join("\n\n")}\n\n*Would you like me to add any of these ideas to your milestone checklist or allocate a budget line item in ${activeEvent.currency}?*`;
+
+      return NextResponse.json({
+        response: responseText,
+        toolCalls: [toolCall],
+        actionCard: {
+          type: "ideas_grid",
+          title: `Creative Concepts: ${activeEvent.title}`,
+          data: ideas,
+        },
+      });
+    }
+
+    // 14. TOOL: Public Invite Link Query
+    const isInviteQuery =
+      lowerPrompt.includes("invite link") ||
+      lowerPrompt.includes("how to invite") ||
+      lowerPrompt.includes("share link") ||
+      lowerPrompt.includes("guest link") ||
+      lowerPrompt.includes("invitation link");
+
+    if (isInviteQuery && activeEvent) {
+      const inviteUrl = `/invite/${activeEvent.slug || activeEvent.id}`;
+      return NextResponse.json({
+        response: `💌 Here is your shareable public invite portal for **${activeEvent.title}**:\n\n🔗 **[${inviteUrl}](${inviteUrl})**\n\nGuests can use this link to confirm their attendance, record dietary restrictions, and leave personal notes for the host. All RSVPs update your live dashboard and Concierge pulse instantly!`,
+      });
+    }
+
+    // 15. General LLM call if OpenAI or Gemini API key is present
+    const customHeaderKey = req.headers.get("x-openai-key") || req.headers.get("x-gemini-key");
+    const bindings = await getAppBindings();
+    const effectiveKey =
+      customHeaderKey ||
+      clientBodyKey ||
+      bindings.OPENAI_API_KEY ||
+      bindings.GEMINI_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      process.env.GEMINI_API_KEY;
+
+    if (effectiveKey) {
       try {
+        const { formatted, diffDays } = formatCelebrationDate(activeEvent?.event_date);
         const systemPrompt = `You are FestivAI Concierge, an editorial, highly capable AI assistant for celebration planning (weddings, birthdays, galas).
-Active Event: ${
+Active Celebration: ${
           activeEvent
-            ? `${activeEvent.title} (${activeEvent.event_type}, Date: ${activeEvent.event_date}, Location: ${activeEvent.location}, Guests: ${activeEvent.guest_count}, Budget: ${formatCurrency(
+            ? `${activeEvent.title} (${activeEvent.event_type}, Date: ${formatted} [${activeEvent.event_date}, ${diffDays} days to go], Location: ${activeEvent.location}, Guests: ${activeEvent.guest_count}, Budget: ${formatCurrency(
                 activeEvent.total_budget,
                 activeEvent.currency
               )}, Currency: ${activeEvent.currency} (${currSym}), Vibe: ${activeEvent.vibe})`
@@ -582,41 +820,80 @@ Active Event: ${
         }.
 Active Currency: ${activeCurrency} (Symbol: ${currSym}).
 User Celebrations: ${userEvents.map((e) => e.title).join(", ")}.
-Answer warmly, professionally, and concisely in markdown with actionable tips. Always format monetary values using the active currency symbol (${currSym}). If the user asks about weather, internet research, or budget adjustments, provide helpful context.`;
+Answer warmly, professionally, and concisely in markdown with actionable tips. Always format monetary values using the active currency symbol (${currSym}). When asked about date, location, or budget, provide exact details from the active celebration.`;
 
-        const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o",
-            messages: [
-              { role: "system", content: systemPrompt },
-              ...messages.map((m) => ({ role: m.role, content: m.content })),
-            ],
-            temperature: 0.7,
-            max_tokens: 800,
-          }),
-        });
+        // Check if Gemini key (starts with AIza)
+        if (effectiveKey.startsWith("AIza")) {
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${effectiveKey}`;
+          const geminiRes = await fetch(geminiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      text: `${systemPrompt}\n\nConversation History:\n${messages
+                        .slice(-4)
+                        .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+                        .join("\n")}\n\nUSER: ${userPrompt}\nASSISTANT:`,
+                    },
+                  ],
+                },
+              ],
+            }),
+          });
 
-        if (openAiRes.ok) {
-          const json = (await openAiRes.json()) as any;
-          const aiText =
-            json.choices?.[0]?.message?.content ||
-            "I am ready to help you coordinate your celebrations.";
-          return NextResponse.json({ response: aiText });
+          if (geminiRes.ok) {
+            const data = (await geminiRes.json()) as any;
+            const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (reply) return NextResponse.json({ response: reply });
+          }
+        } else {
+          // OpenAI Call
+          const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${effectiveKey}`,
+            },
+            body: JSON.stringify({
+              model: model || "gpt-4o",
+              messages: [
+                { role: "system", content: systemPrompt },
+                ...messages.map((m) => ({ role: m.role, content: m.content })),
+              ],
+              temperature: 0.7,
+              max_tokens: 800,
+            }),
+          });
+
+          if (openAiRes.ok) {
+            const json = (await openAiRes.json()) as any;
+            const aiText =
+              json.choices?.[0]?.message?.content ||
+              "I am ready to help you coordinate your celebrations.";
+            return NextResponse.json({ response: aiText });
+          }
         }
       } catch (llmErr) {
-        console.warn("OpenAI chat error:", llmErr);
+        console.warn("LLM chat error:", llmErr);
       }
     }
 
-    // 11. Domain Intelligent Default ChatGPT Response
-    const activeTitle = activeEvent ? activeEvent.title : "your celebrations";
+    // 16. Natural Conversational Default with Event Awareness
+    if (activeEvent) {
+      const { formatted, diffDays, statusText } = formatCelebrationDate(activeEvent.event_date);
+      const greeting = userName ? `Hello **${userName}**!` : "Hello!";
+
+      return NextResponse.json({
+        response: `${greeting} I'm actively coordinating **${activeEvent.title}** (${(activeEvent.event_type || "Celebration").toUpperCase()} in **${activeEvent.location}** on **${formatted}**).\n\n### 📋 Active Celebration Status:\n- **Event Date:** 🗓️ **${formatted}** (${statusText})\n- **Location:** 📍 **${activeEvent.location}**\n- **Target Guests:** 👥 **${activeEvent.guest_count} attendees**\n- **Financial Ledger:** 💰 **${formatCurrency(activeEvent.total_budget, activeEvent.currency)}**\n- **Vibe:** ✨ **${activeEvent.vibe || "Celebration Elegance"}**\n\nHow can I help you today? You can ask me:\n- *"When is my event?"* or *"Where is my event?"*\n- *"What will the weather be like in ${activeEvent.location}?"*\n- *"What's our budget breakdown?"* or *"Show RSVP pulse"*\n- *"Give me creative decor & theme ideas"*`,
+      });
+    }
+
     return NextResponse.json({
-      response: `I'm analyzing **${activeTitle}**. Here are four intelligent actions you can trigger right now:\n\n1. **🌤️ Check Venue Weather:** Ask *"What will the weather be like in ${activeEvent ? activeEvent.location : "Goa"} on celebration day?"* to get live forecasts, precipitation risk, and golden hour timing.\n2. **🌐 Search the Internet:** Ask *"Find top beachfront venues in Goa with guest capacity 150"* for real-time web intelligence and citations.\n3. **💱 Switch Currency:** Say *"Change currency to INR (₹)"* or *"Switch to Euros"* to immediately reformat all ledger cards.\n4. **📊 Analyze Budget & RSVPs:** Ask *"What's our budget buffer?"* or *"Who has confirmed attendance?"*.\n\nHow would you like to proceed?`,
+      response: `Hello! Welcome to your FestivAI Planning Concierge.\n\nYou have no active celebration selected yet. Click **+ New Celebration** in the sidebar to configure a celebration, or type a prompt like:\n\n- *"Plan a Tuscan Garden Wedding in Napa Valley for 90 guests with $25,000 budget"*\n- *"Plan a 30th Birthday rooftop party in Mumbai with ₹5 Lakhs for 60 guests"*`,
     });
   } catch (error: any) {
     console.error("POST /api/chat error:", error);

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { formatCelebrationDate } from "../lib/date.ts";
 
 test("Conversational Chat & Planning Intelligence Suite", async (t) => {
   await t.test("parses event creation intent with budget and guests from prompt", () => {
@@ -34,6 +35,62 @@ test("Conversational Chat & Planning Intelligence Suite", async (t) => {
     let budget = parseFloat(budgetMatch[1]);
     if (budgetMatch[2]?.toLowerCase() === "k") budget *= 1000;
     assert.equal(budget, 25000);
+  });
+
+  await t.test("identifies 'when is my event' and date countdown queries correctly", () => {
+    const dateQueries = [
+      "when is my event",
+      "When is the celebration?",
+      "what is the date of my party",
+      "how many days left until my wedding?",
+      "countdown to celebration",
+      "event date",
+      "when are we celebrating?",
+    ];
+
+    for (const q of dateQueries) {
+      const lower = q.toLowerCase();
+      const isDateSchedule =
+        lower.includes("when is") ||
+        lower.includes("when are") ||
+        lower.includes("what date") ||
+        lower.includes("what is the date") ||
+        lower.includes("event date") ||
+        lower.includes("date of") ||
+        lower.includes("how many days") ||
+        lower.includes("days left") ||
+        lower.includes("countdown") ||
+        lower.startsWith("when");
+      assert.equal(isDateSchedule, true, `Query "${q}" must match date/schedule intent`);
+    }
+
+    // Verify formatCelebrationDate output
+    const result = formatCelebrationDate("2026-10-31");
+    assert.ok(result.formatted.includes("2026"));
+    assert.ok(result.formatted.includes("October"));
+    assert.ok(result.statusText.includes("days"));
+  });
+
+  await t.test("identifies 'where is my event' and location queries correctly", () => {
+    const locQueries = [
+      "where is my event",
+      "where will the party take place?",
+      "what is the location?",
+      "what is the venue?",
+      "where is my wedding",
+    ];
+
+    for (const q of locQueries) {
+      const lower = q.toLowerCase();
+      const isLocation =
+        lower.includes("where is") ||
+        lower.includes("where will") ||
+        lower.includes("what is the location") ||
+        lower.includes("what location") ||
+        lower.includes("what is the venue") ||
+        lower.startsWith("where");
+      assert.equal(isLocation, true, `Query "${q}" must match location intent`);
+    }
   });
 
   await t.test("identifies budget inquiry queries correctly", () => {

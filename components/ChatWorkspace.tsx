@@ -291,14 +291,22 @@ export function ChatWorkspace({
     setIsAiLoading(true);
 
     try {
+      const storedKey = typeof window !== "undefined" ? localStorage.getItem("festivai_openai_key") : null;
+      const storedModel = typeof window !== "undefined" ? localStorage.getItem("festivai_model") : null;
+
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(storedKey ? { "x-openai-key": storedKey } : {}),
+        },
         body: JSON.stringify({
           messages: nextMessages,
           eventId: activeEvent?.id,
           userEmail: user?.email || undefined,
           userName: user?.displayName || undefined,
+          apiKey: storedKey || undefined,
+          model: storedModel || "gpt-4o",
         }),
       });
 
@@ -975,69 +983,135 @@ export function ChatWorkspace({
                     Suggested Quick Prompts:
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <button
-                      onClick={() =>
-                        handleSendMessage(
-                          "Plan a Tuscan Garden Wedding in Napa Valley for 90 guests with $25,000 total budget."
-                        )
-                      }
-                      className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
-                    >
-                      <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
-                        <span>💍 Plan Napa Valley Wedding</span>
-                        <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
-                      </div>
-                      <div className="text-[11px] text-[#666666] mt-0.5">
-                        90 guests • $25k budget • Floral aesthetic
-                      </div>
-                    </button>
+                    {activeEvent ? (
+                      <>
+                        <button
+                          onClick={() => handleSendMessage("When is my event?")}
+                          className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
+                        >
+                          <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
+                            <span>🗓️ When is my event?</span>
+                            <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                          </div>
+                          <div className="text-[11px] text-[#666666] mt-0.5">
+                            {activeEvent.title} • {activeEvent.event_date}
+                          </div>
+                        </button>
 
-                    <button
-                      onClick={() =>
-                        handleSendMessage(
-                          "Plan a 30th Rooftop Birthday Bash in Brooklyn for 40 guests with $4,500 budget."
-                        )
-                      }
-                      className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
-                    >
-                      <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
-                        <span>🎂 Plan Rooftop Birthday</span>
-                        <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
-                      </div>
-                      <div className="text-[11px] text-[#666666] mt-0.5">
-                        40 guests • $4.5k budget • Sunset vibe
-                      </div>
-                    </button>
+                        <button
+                          onClick={() =>
+                            handleSendMessage(
+                              `What will the weather be like in ${activeEvent.location} on ${activeEvent.event_date}?`
+                            )
+                          }
+                          className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
+                        >
+                          <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
+                            <span>🌤️ Check Venue Weather</span>
+                            <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                          </div>
+                          <div className="text-[11px] text-[#666666] mt-0.5">
+                            Forecast & rain risk in {activeEvent.location}
+                          </div>
+                        </button>
 
-                    <button
-                      onClick={() =>
-                        handleSendMessage("What is our current budget status and where can we optimize?")
-                      }
-                      className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
-                    >
-                      <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
-                        <span>📊 Analyze Budget Status</span>
-                        <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
-                      </div>
-                      <div className="text-[11px] text-[#666666] mt-0.5">
-                        Allocated vs actual spent & variance
-                      </div>
-                    </button>
+                        <button
+                          onClick={() =>
+                            handleSendMessage(`What is our current budget status for ${activeEvent.title}?`)
+                          }
+                          className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
+                        >
+                          <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
+                            <span>📊 Analyze Budget & Spend</span>
+                            <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                          </div>
+                          <div className="text-[11px] text-[#666666] mt-0.5">
+                            Allocated vs spent & category breakdown
+                          </div>
+                        </button>
 
-                    <button
-                      onClick={() =>
-                        handleSendMessage("Show me confirmed RSVPs and dietary requirements")
-                      }
-                      className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
-                    >
-                      <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
-                        <span>💌 Check RSVP Pulse</span>
-                        <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
-                      </div>
-                      <div className="text-[11px] text-[#666666] mt-0.5">
-                        Live attendance counts & dietary notes
-                      </div>
-                    </button>
+                        <button
+                          onClick={() =>
+                            handleSendMessage(`Show me confirmed RSVPs and invite link for ${activeEvent.title}`)
+                          }
+                          className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
+                        >
+                          <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
+                            <span>💌 Check RSVP Pulse</span>
+                            <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                          </div>
+                          <div className="text-[11px] text-[#666666] mt-0.5">
+                            Live attendance counts & shareable portal
+                          </div>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() =>
+                            handleSendMessage(
+                              "Plan a Tuscan Garden Wedding in Napa Valley for 90 guests with $25,000 total budget."
+                            )
+                          }
+                          className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
+                        >
+                          <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
+                            <span>💍 Plan Napa Valley Wedding</span>
+                            <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                          </div>
+                          <div className="text-[11px] text-[#666666] mt-0.5">
+                            90 guests • $25k budget • Floral aesthetic
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            handleSendMessage(
+                              "Plan a 30th Rooftop Birthday Bash in Brooklyn for 40 guests with $4,500 budget."
+                            )
+                          }
+                          className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
+                        >
+                          <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
+                            <span>🎂 Plan Rooftop Birthday</span>
+                            <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                          </div>
+                          <div className="text-[11px] text-[#666666] mt-0.5">
+                            40 guests • $4.5k budget • Sunset vibe
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            handleSendMessage("What is our current budget status and where can we optimize?")
+                          }
+                          className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
+                        >
+                          <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
+                            <span>📊 Analyze Budget Status</span>
+                            <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                          </div>
+                          <div className="text-[11px] text-[#666666] mt-0.5">
+                            Allocated vs actual spent & variance
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            handleSendMessage("Show me confirmed RSVPs and dietary requirements")
+                          }
+                          className="p-2.5 rounded-xl border border-[#e3e3e2] bg-[#f8f7f4] hover:bg-white hover:border-[#714cb6] text-left transition-all group"
+                        >
+                          <div className="font-[460] text-[#292827] group-hover:text-[#714cb6] flex items-center space-x-1.5">
+                            <span>💌 Check RSVP Pulse</span>
+                            <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                          </div>
+                          <div className="text-[11px] text-[#666666] mt-0.5">
+                            Live attendance counts & dietary notes
+                          </div>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
