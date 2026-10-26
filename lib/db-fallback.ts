@@ -84,6 +84,11 @@ export class MockD1Database {
         const match = allEvents.find((e) => e.slug === slug);
         return match ? ([match] as unknown as T[]) : [];
       }
+      if (cleanSql.includes("where organizer_email = ?")) {
+        const email = params[0];
+        const matches = allEvents.filter((e) => e.organizer_email === email);
+        return matches.length > 0 ? (matches as unknown as T[]) : (allEvents as unknown as T[]);
+      }
       return allEvents as unknown as T[];
     }
 

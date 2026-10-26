@@ -317,3 +317,27 @@ export async function insertRsvp(rsvp: Omit<RsvpRecord, "created_at">): Promise<
     throw error;
   }
 }
+
+export async function getEventsByOrganizerEmail(email?: string): Promise<EventRecord[]> {
+  const { DB } = await getAppBindings();
+  await ensureDbTables(DB);
+
+  try {
+    if (email && email.trim()) {
+      const query = "SELECT * FROM events WHERE organizer_email = ? ORDER BY created_at DESC";
+      const res = await DB.prepare(query).bind(email.trim()).all();
+      const results = (res.results as EventRecord[]) || [];
+      if (results.length > 0) return results;
+    }
+
+    // Default fallback: return all events from DB or the seeded sample event
+    const allQuery = "SELECT * FROM events ORDER BY created_at DESC LIMIT 30";
+    const allRes = await DB.prepare(allQuery).all();
+    const allResults = (allRes.results as EventRecord[]) || [];
+    return allResults.length > 0 ? allResults : [SAMPLE_EVENT];
+  } catch (error) {
+    console.error("Error fetching events by organizer:", error);
+    return [SAMPLE_EVENT];
+  }
+}
+

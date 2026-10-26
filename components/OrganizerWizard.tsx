@@ -25,12 +25,23 @@ import {
 interface OrganizerWizardProps {
   onOpenSettings: () => void;
   selectedModel: string;
+  onSuccess?: (eventData: any) => void;
+  onCancel?: () => void;
+  initialOrganizerName?: string;
+  initialOrganizerEmail?: string;
 }
 
-export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWizardProps) {
+export function OrganizerWizard({
+  onOpenSettings,
+  selectedModel,
+  onSuccess,
+  onCancel,
+  initialOrganizerName = "",
+  initialOrganizerEmail = "",
+}: OrganizerWizardProps) {
   // Form fields
-  const [organizerName, setOrganizerName] = useState("");
-  const [organizerEmail, setOrganizerEmail] = useState("");
+  const [organizerName, setOrganizerName] = useState(initialOrganizerName);
+  const [organizerEmail, setOrganizerEmail] = useState(initialOrganizerEmail);
   const [eventType, setEventType] = useState("wedding");
   const [title, setTitle] = useState("");
   const [eventDate, setEventDate] = useState("");
@@ -237,7 +248,11 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
       }
 
       const data = (await res.json()) as any;
-      window.location.href = `/events/${data.eventId}/dashboard`;
+      if (onSuccess) {
+        onSuccess(data);
+      } else {
+        window.location.href = `/events/${data.eventId}/dashboard`;
+      }
     } catch (err: any) {
       clearInterval(stepInterval);
       setIsSubmitting(false);
@@ -246,7 +261,16 @@ export function OrganizerWizard({ onOpenSettings, selectedModel }: OrganizerWiza
   };
 
   return (
-    <div className="max-w-[1000px] mx-auto px-4 py-8 sm:py-12">
+    <div className="max-w-[1000px] mx-auto px-4 py-8 sm:py-12 relative">
+      {onCancel && (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="absolute top-4 right-4 text-xs font-medium px-3 py-1.5 rounded-lg border border-[#e3e3e2] bg-white hover:bg-[#f2f0eb] text-[#666666] hover:text-[#292827] transition-all"
+        >
+          ✕ Close Wizard
+        </button>
+      )}
       {/* Editorial Header */}
       <div className="text-center mb-10 space-y-3">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white border border-[#e3e3e2] text-xs font-[460] text-[#292827]">

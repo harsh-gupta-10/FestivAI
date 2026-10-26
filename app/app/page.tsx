@@ -3,10 +3,10 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
-import { OrganizerWizard } from "@/components/OrganizerWizard";
+import { ChatWorkspace } from "@/components/ChatWorkspace";
 import { SettingsModal } from "@/components/SettingsModal";
 import { GenAiInspector, InspectorData } from "@/components/GenAiInspector";
-import { Sparkles, ArrowLeft, ShieldCheck, Database, Cloud } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 export default function AppWorkspacePage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -22,14 +22,14 @@ export default function AppWorkspacePage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f2f0eb] text-[#292827] selection:bg-[#d4c7ff] selection:text-[#292827]">
+    <div className="h-screen flex flex-col bg-[#f2f0eb] text-[#292827] selection:bg-[#d4c7ff] selection:text-[#292827] overflow-hidden">
       {/* App Workspace Banner */}
-      <div className="bg-[#421d24] text-white px-4 py-2 text-xs border-b border-white/10">
+      <div className="bg-[#421d24] text-white px-4 py-2 text-xs border-b border-white/10 shrink-0">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span className="font-semibold tracking-wide">app.festivai.com</span>
-            <span className="text-white/60">• Organizer Command Workspace</span>
+            <span className="text-white/60">• Organizer Intelligence Workspace</span>
           </div>
           <Link
             href="/"
@@ -47,16 +47,14 @@ export default function AppWorkspacePage() {
         isInspectorOpen={isInspectorOpen}
       />
 
-      <main id="main-content" className="flex-1">
-        <OrganizerWizard
+      <main id="main-content" className="flex-1 overflow-hidden">
+        <ChatWorkspace
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onToggleInspector={() => setIsInspectorOpen((prev) => !prev)}
+          isInspectorOpen={isInspectorOpen}
           selectedModel={currentModel}
         />
       </main>
-
-      <footer className="border-t border-[#e3e3e2] py-6 text-center text-xs text-[#666666]">
-        <p>FestivAI Workspace — Hosted on Cloudflare Workers, D1 SQLite & R2</p>
-      </footer>
 
       {/* Settings Modal */}
       <SettingsModal

@@ -2,6 +2,11 @@
 **PromptWars Virtual Competition — [Challenge 5] Celebration & Event Planner**  
 *Create a GenAI-powered planning assistant that helps users organize weddings, birthdays, and community events with budgets, timelines, vendor checklists, and personalized ideas.*
 
+> 🚀 **Live Production Deployment:** [https://festivai.harshgupta24716.workers.dev](https://festivai.harshgupta24716.workers.dev)  
+> 🎛️ **Organizer Workspace:** [https://festivai.harshgupta24716.workers.dev/app](https://festivai.harshgupta24716.workers.dev/app)  
+> 💌 **Live Public Invite & RSVP:** [https://festivai.harshgupta24716.workers.dev/invite/sample-wedding-2026](https://festivai.harshgupta24716.workers.dev/invite/sample-wedding-2026)  
+> 📊 **Sample Dashboard:** [https://festivai.harshgupta24716.workers.dev/events/sample-wedding-2026/dashboard](https://festivai.harshgupta24716.workers.dev/events/sample-wedding-2026/dashboard)
+
 ---
 
 ## 🌟 Executive Overview

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "@/context/AuthContext";
+import { AuthModal } from "@/components/AuthModal";
 
 export const metadata: Metadata = {
   title: "FestivAI | GenAI Celebration & Event Planner",
@@ -23,7 +25,10 @@ export default function RootLayout({
         >
           Skip to main content
         </a>
-        {children}
+        <AuthProvider>
+          {children}
+          <AuthModal />
+        </AuthProvider>
       </body>
     </html>
   );
