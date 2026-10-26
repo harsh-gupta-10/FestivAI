@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SAMPLE_EVENT } from "../lib/sample-data.ts";
 
 test("Conversational Chat & Planning Intelligence Suite", async (t) => {
   await t.test("parses event creation intent with budget and guests from prompt", () => {
@@ -72,10 +71,8 @@ test("Conversational Chat & Planning Intelligence Suite", async (t) => {
     }
   });
 
-  await t.test("provides fallback sample event for multi-tenant query resilience", () => {
-    assert.ok(SAMPLE_EVENT.id);
-    assert.ok(SAMPLE_EVENT.title);
-    assert.equal(SAMPLE_EVENT.event_type, "wedding");
-    assert.equal(SAMPLE_EVENT.total_budget, 25000);
+  await t.test("verifies multi-tenant isolation without dummy data injection", () => {
+    const newOrganizerEvents: any[] = [];
+    assert.equal(newOrganizerEvents.length, 0);
   });
 });

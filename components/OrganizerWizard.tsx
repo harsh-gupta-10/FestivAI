@@ -275,7 +275,7 @@ export function OrganizerWizard({
       <div className="text-center mb-10 space-y-3">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white border border-[#e3e3e2] text-xs font-[460] text-[#292827]">
           <Sparkles className="w-3.5 h-3.5 text-[#714cb6]" />
-          <span>PromptWars [Challenge 5] Celebration & Event Planner</span>
+          <span>Autonomous Event Intelligence • Cloudflare Native Architecture</span>
         </div>
 
         <h1 className="text-3xl sm:text-5xl font-[460] tracking-[-0.027em] text-[#292827] leading-tight">
@@ -286,31 +286,22 @@ export function OrganizerWizard({
           Generative budgets, timeline milestones, and tailored vendor checklists stored natively on Cloudflare D1.
         </p>
 
-        {/* Video Rubric Quick Test Presets */}
+        {/* Templates & Quick Pre-fills */}
         <div className="pt-2 flex flex-wrap items-center justify-center gap-2 text-xs">
-          <span className="text-[#666666] font-medium">Quick Fill:</span>
+          <span className="text-[#666666] font-medium">Inspirations:</span>
           <button
             type="button"
             onClick={() => loadQuickDemo("wedding")}
             className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#f8f7f5] border border-[#e3e3e2] text-[#292827] transition-all flex items-center space-x-1"
           >
-            <span>💍 Demo Wedding ($28k)</span>
+            <span>💍 Botanical Vineyard Wedding ($28k)</span>
           </button>
           <button
             type="button"
             onClick={() => loadQuickDemo("birthday")}
             className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#f8f7f5] border border-[#e3e3e2] text-[#292827] transition-all flex items-center space-x-1"
           >
-            <span>🎂 Demo Birthday ($6.5k)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => loadQuickDemo("edgecase")}
-            className="px-3 py-1.5 rounded-lg bg-[#421d24] hover:bg-[#572730] text-white transition-all flex items-center space-x-1 font-medium shadow-sm"
-            title="Demonstrate Real-Time Negative Budget & Invalid Email Rejections"
-          >
-            <ShieldAlert className="w-3.5 h-3.5 text-[#d4c7ff]" />
-            <span>🚨 Live Edge-Case Test (Invalid Email / Negative Budget)</span>
+            <span>🎂 Skyline Rooftop Celebration ($6.5k)</span>
           </button>
         </div>
       </div>

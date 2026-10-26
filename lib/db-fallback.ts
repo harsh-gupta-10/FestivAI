@@ -1,5 +1,3 @@
-import { SAMPLE_EVENT, SAMPLE_RSVPS } from "./sample-data.ts";
-
 interface StoredRow {
   [key: string]: any;
 }
@@ -50,14 +48,7 @@ export class MockD1Database {
   private events: Map<string, StoredRow> = new Map();
   private rsvps: Map<string, StoredRow> = new Map();
 
-  constructor() {
-    this.seedDefaults();
-  }
-
-  private seedDefaults() {
-    this.events.set(SAMPLE_EVENT.id, { ...SAMPLE_EVENT });
-    SAMPLE_RSVPS.forEach((r) => this.rsvps.set(r.id, { ...r }));
-  }
+  constructor() {}
 
   prepare(query: string) {
     return new MockD1PreparedStatement(query, this);

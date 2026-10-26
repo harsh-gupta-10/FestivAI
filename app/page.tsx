@@ -38,14 +38,14 @@ export default function MarketingLandingPage() {
         <div className="max-w-[1200px] mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-2 truncate">
             <span className="w-1.5 h-1.5 rounded-full bg-[#d4c7ff] animate-ping" />
-            <span className="font-semibold text-[#d4c7ff]">PromptWars Challenge 5:</span>
-            <span className="truncate">GenAI Celebration & Event Planner on Cloudflare Workers, D1 & R2</span>
+            <span className="font-semibold text-[#d4c7ff]">FestivAI Intelligence:</span>
+            <span className="truncate">Autonomous Celebration & Event Planning on Cloudflare Global Edge</span>
           </div>
           <Link
             href="/app"
             className="hidden sm:inline-flex items-center space-x-1 font-semibold text-white hover:text-[#d4c7ff] transition-colors ml-4 whitespace-nowrap"
           >
-            <span>Launch app.festivai.com</span>
+            <span>Launch Workspace</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
@@ -76,10 +76,10 @@ export default function MarketingLandingPage() {
               Architecture
             </a>
             <a href="#dynamic-replan" className="hover:text-[#714cb6] transition-colors">
-              Dynamic Re-Plan
+              Adaptive Re-Plan
             </a>
-            <Link href="/events/sample-wedding-2026/dashboard" className="hover:text-[#714cb6] transition-colors">
-              Sample Dashboard
+            <Link href="/app" className="hover:text-[#714cb6] transition-colors">
+              AI Concierge
             </Link>
           </nav>
 
@@ -120,7 +120,7 @@ export default function MarketingLandingPage() {
           <div className="text-center max-w-3xl mx-auto space-y-5">
             <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-[#ffffff] border border-[#e3e3e2] text-xs font-[460] text-[#292827]">
               <Sparkles className="w-3.5 h-3.5 text-[#714cb6]" />
-              <span>Autonomous Celebration Architecture on Cloudflare Free Tier</span>
+              <span>Autonomous Celebration Intelligence • Cloudflare Native Architecture</span>
             </div>
 
             <h1 className="text-4xl sm:text-6xl font-[460] tracking-[-0.028em] text-[#292827] leading-[1.05]">
@@ -140,12 +140,12 @@ export default function MarketingLandingPage() {
                 <span>Launch App Workspace</span>
                 <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
               </Link>
-              <Link
-                href="/events/sample-wedding-2026/dashboard"
+              <a
+                href="#suite"
                 className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 rounded-[16px] bg-[#ffffff] text-[#292827] border border-[#e3e3e2] text-base font-[460] hover:bg-[#f8f7f5] transition-all"
               >
-                <span>View Sample Dashboard</span>
-              </Link>
+                <span>Explore Platform Capabilities</span>
+              </a>
             </div>
           </div>
 
@@ -334,14 +334,14 @@ export default function MarketingLandingPage() {
                   <Wand2 className="w-5 h-5 text-[#d4c7ff]" />
                 </div>
                 <h3 className="text-2xl font-[460] text-[#292827]">
-                  Dynamic Re-Planner: Prove AI is Dynamic
+                  Adaptive Re-Planner: Real-Time Event Adjustments
                 </h3>
                 <p className="text-sm text-[#666666] leading-relaxed font-[460]">
                   Plans change. Type any live adjustment: &quot;Move event indoors due to rain, cut budget by 25%, and switch menu to 100% vegan.&quot; FestivAI instantly updates the masterplan in D1 and highlights changes on screen.
                 </p>
                 <div className="pt-2">
-                  <Link href="/events/sample-wedding-2026/dashboard" className="violet-link text-sm font-semibold flex items-center">
-                    <span>Test Re-Planner on Sample Dashboard</span>
+                  <Link href="/app" className="violet-link text-sm font-semibold flex items-center">
+                    <span>Try Adaptive Re-Planner in Workspace</span>
                     <ChevronRight className="w-4 h-4 ml-1" />
                   </Link>
                 </div>
@@ -416,8 +416,8 @@ export default function MarketingLandingPage() {
                   Share clean invite URLs (<code className="text-[#421d24]">/invite/[id]</code>) globally. Guests view the custom theme palette, R2 banner, countdown timer, and submit RSVPs directly into Cloudflare D1 with celebratory confetti.
                 </p>
                 <div className="pt-2">
-                  <Link href="/invite/sample-wedding-2026" target="_blank" className="violet-link text-sm font-semibold flex items-center">
-                    <span>Preview Live Public Invite</span>
+                  <Link href="/app" className="violet-link text-sm font-semibold flex items-center">
+                    <span>Create & Share Invites in App</span>
                     <ExternalLink className="w-4 h-4 ml-1" />
                   </Link>
                 </div>
@@ -578,7 +578,7 @@ export default function MarketingLandingPage() {
               Ready to elevate your celebration planning?
             </h2>
             <p className="text-sm text-[#666666] font-[460]">
-              Sign in to the Organizer Workspace on <code>app.festivai.com</code> or test our live demo wedding.
+              Sign in to the Organizer Workspace to plan weddings, birthdays, and community gatherings with AI precision.
             </p>
           </div>
 
@@ -587,14 +587,8 @@ export default function MarketingLandingPage() {
               href="/app"
               className="px-6 py-3.5 rounded-[16px] bg-[#421d24] text-white text-sm font-[460] hover:bg-[#572730] transition-all shadow-md flex items-center space-x-2"
             >
-              <span>Launch App (app.festivai.com)</span>
+              <span>Enter Workspace</span>
               <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link
-              href="/events/sample-wedding-2026/dashboard"
-              className="px-6 py-3.5 rounded-[16px] bg-white text-[#292827] border border-[#e3e3e2] text-sm font-[460] hover:bg-[#f8f7f5] transition-all"
-            >
-              Explore Sample Event
             </Link>
           </div>
         </div>
@@ -612,7 +606,7 @@ export default function MarketingLandingPage() {
               <span className="text-lg font-bold tracking-tight text-white">FestivAI</span>
             </div>
             <p className="text-xs text-white/70 leading-relaxed font-[460]">
-              GenAI celebration & event planning assistant for PromptWars Virtual Competition: [Challenge 5].
+              Autonomous celebration and event planning platform powered by generative reasoning, real-time budgets, and edge persistence.
             </p>
             <p className="text-[11px] text-white/50">
               Deployed on Cloudflare Workers with OpenNext, D1 SQLite, R2 & OpenAI.
@@ -624,6 +618,11 @@ export default function MarketingLandingPage() {
             <ul className="space-y-2 text-xs font-[460] text-white/70">
               <li>
                 <Link href="/app" className="hover:text-white transition-colors">
+                  AI Concierge Workspace
+                </Link>
+              </li>
+              <li>
+                <Link href="/app" className="hover:text-white transition-colors">
                   Organizer Setup Wizard
                 </Link>
               </li>
@@ -633,20 +632,15 @@ export default function MarketingLandingPage() {
                 </Link>
               </li>
               <li>
-                <Link href="/events/sample-wedding-2026/dashboard" className="hover:text-white transition-colors">
-                  Command Center Dashboard
-                </Link>
-              </li>
-              <li>
-                <Link href="/invite/sample-wedding-2026" className="hover:text-white transition-colors">
-                  Shareable Public Invite
+                <Link href="/app" className="hover:text-white transition-colors">
+                  Shareable Public RSVPs
                 </Link>
               </li>
             </ul>
           </div>
 
           <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-white">Cloudflare Free Tier</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-white">Edge Infrastructure</h4>
             <ul className="space-y-2 text-xs font-[460] text-white/70">
               <li>Cloudflare Workers (Edge SSR)</li>
               <li>Cloudflare D1 (Serverless SQLite)</li>
@@ -656,21 +650,21 @@ export default function MarketingLandingPage() {
           </div>
 
           <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-white">AI Engine & Rubric</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-white">AI Engine</h4>
             <ul className="space-y-2 text-xs font-[460] text-white/70">
               <li>OpenAI o3-mini Reasoning</li>
               <li>OpenAI GPT-4o Flagship</li>
-              <li>Dynamic Re-Planning Bar</li>
-              <li>Live GenAI Inspector Drawer</li>
+              <li>Adaptive Re-Planning Bar</li>
+              <li>GenAI Audit Inspector</li>
             </ul>
           </div>
         </div>
 
         <div className="max-w-[1200px] mx-auto mt-12 pt-6 border-t border-white/10 text-center text-xs text-white/60 flex flex-col sm:flex-row items-center justify-between gap-2 font-[460]">
-          <p>© 2026 FestivAI. Built for PromptWars Virtual Competition [Challenge 5].</p>
+          <p>© 2026 FestivAI Inc. All rights reserved. Cloudflare Global Edge Architecture.</p>
           <div className="flex items-center space-x-4">
             <Link href="/app" className="hover:text-white transition-colors">
-              App Subdomain (app.festivai.com)
+              Workspace (app.festivai.com)
             </Link>
             <span>•</span>
             <Link href="/" className="hover:text-white transition-colors">

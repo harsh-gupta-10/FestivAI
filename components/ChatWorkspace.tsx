@@ -144,42 +144,98 @@ export function ChatWorkspace({
   // Active event object
   const activeEvent = events.find((e) => e.id === activeEventId) || events[0] || null;
 
-  // 2. Initialize Proactive Alerts & Welcome message
+  // 2. Real Dynamic Proactive Alerts & Welcome message
   useEffect(() => {
+    const hostName = user?.displayName || user?.email?.split("@")[0] || "Organizer";
+
     if (activeEvent) {
+      // Query real event stats from D1
+      fetch(`/api/events/${activeEvent.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: any) => {
+          if (!data) return;
+          const rsvps = data.rsvps || [];
+          const going = rsvps.filter((r: any) => r.status === "going");
+          const goingCount = going.reduce((acc: number, r: any) => acc + (r.attendees_count || 1), 0);
+          const alerts: ProactiveAlert[] = [];
+
+          if (rsvps.length > 0) {
+            const pct = Math.round((goingCount / (activeEvent.guest_count || 1)) * 100);
+            const notes = rsvps.filter((r: any) => r.dietary_notes).map((r: any) => r.dietary_notes);
+            alerts.push({
+              id: "alert-rsvp",
+              type: "rsvp",
+              title: "Guest RSVP Pulse",
+              message: `${goingCount} of ${activeEvent.guest_count} guests confirmed for "${activeEvent.title}".${notes.length > 0 ? ` ${notes.length} dietary notes logged.` : ""}`,
+              promptAction: `Show me RSVP breakdown and dietary requests for ${activeEvent.title}`,
+              badge: `${pct}% Confirmed`,
+            });
+          } else {
+            alerts.push({
+              id: "alert-rsvp-pending",
+              type: "rsvp",
+              title: "RSVP Portal Live",
+              message: `Public invite link is live for "${activeEvent.title}". No guest responses recorded yet.`,
+              promptAction: `How do I share the invite link and track RSVPs for ${activeEvent.title}?`,
+              badge: "Awaiting Guests",
+            });
+          }
+
+          if (data.plan?.budgetBreakdown) {
+            const totalAlloc = data.plan.budgetBreakdown.reduce((acc: number, b: any) => acc + (b.allocatedAmount || 0), 0);
+            const totalSpent = data.plan.budgetBreakdown.reduce((acc: number, b: any) => acc + (b.actualSpent || 0), 0);
+            const variance = totalAlloc - totalSpent;
+            if (totalSpent > 0) {
+              const utilPct = Math.round((totalSpent / (totalAlloc || 1)) * 100);
+              alerts.push({
+                id: "alert-budget",
+                type: "budget",
+                title: "Budget Status",
+                message: `${utilPct}% utilized (${activeEvent.currency} ${totalSpent.toLocaleString()} spent of ${totalAlloc.toLocaleString()}). ${variance >= 0 ? `Buffer: +${variance.toLocaleString()}` : `Over by ${Math.abs(variance).toLocaleString()}`}.`,
+                promptAction: `What's my budget status for ${activeEvent.title} and where can we optimize?`,
+                badge: `${utilPct}% Utilized`,
+              });
+            }
+          }
+
+          setActiveAlerts(alerts);
+        })
+        .catch(() => {});
+
+      const welcomeText = `Hello **${hostName}**! Welcome to your FestivAI Concierge.\n\nActive celebration: **${activeEvent.title}** (${activeEvent.location}, ${activeEvent.event_date}). You can query budgets, track RSVPs, adjust timelines, or say **"Plan a 30th Birthday rooftop party in Chicago with $6,000 for 50 guests"** to create a new celebration!`;
+
+      setMessages([
+        {
+          id: "msg-welcome",
+          role: "assistant",
+          content: welcomeText,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    } else {
       setActiveAlerts([
         {
-          id: "alert-rsvp",
-          type: "rsvp",
-          title: "Guest RSVP Pulse",
-          message: `72 of ${activeEvent.guest_count} guests confirmed for "${activeEvent.title}". 3 guests specified vegan & nut allergies.`,
-          promptAction: `Show me RSVP breakdown and dietary requests for ${activeEvent.title}`,
-          badge: "72% Confirmed",
+          id: "alert-welcome",
+          type: "timeline",
+          title: "Get Started with FestivAI",
+          message: "You haven't organized any celebrations yet. Create your first wedding, birthday, or gala masterplan with our AI planner.",
+          promptAction: "Plan an elegant Tuscan Garden Wedding in Napa Valley for 90 guests with $25,000 total budget.",
+          badge: "Ready to Plan",
         },
+      ]);
+
+      const welcomeText = `Hello **${hostName}**! Welcome to your FestivAI Concierge.\n\nYou have no active celebrations yet. Click the **+ New Celebration** button in the sidebar or type a prompt below like:\n\n- *"Plan a Tuscan Garden Wedding in Napa Valley for 90 guests with $25,000 budget"*\n- *"Plan a 30th Birthday rooftop bash in Brooklyn for 40 guests with $4,500"*\n\nFestivAI will generate a 100% mathematically balanced budget, milestone timeline, and vendor checklist stored natively on Cloudflare D1.`;
+
+      setMessages([
         {
-          id: "alert-budget",
-          type: "budget",
-          title: "Budget Optimization Tip",
-          message: `Catering contract utilized 92% of allocated tier. Would you like AI to suggest a 10% venue buffer reallocation?`,
-          promptAction: `What's my budget status for ${activeEvent.title} and where can we optimize?`,
-          badge: "Smart Buffer",
+          id: "msg-welcome",
+          role: "assistant",
+          content: welcomeText,
+          createdAt: new Date().toISOString(),
         },
       ]);
     }
-
-    // Default welcoming message
-    const hostName = user?.displayName || user?.email?.split("@")[0] || "Organizer";
-    const welcomeText = `Hello **${hostName}**! Welcome to your FestivAI Concierge.\n\nI'm ready to help you plan, optimize, and coordinate your celebrations. You can query budgets, track RSVPs, adjust timelines, or simply say **"Plan a 30th Birthday party in Brooklyn for 40 guests with $4,000"** to generate a masterplan instantly!`;
-
-    setMessages([
-      {
-        id: "msg-welcome",
-        role: "assistant",
-        content: welcomeText,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-  }, [activeEventId, user]);
+  }, [activeEventId, activeEvent, user]);
 
   // Scroll to bottom on message updates
   useEffect(() => {
@@ -508,13 +564,22 @@ export function ChatWorkspace({
               <span>Querying Cloudflare D1...</span>
             </div>
           ) : filteredEvents.length === 0 ? (
-            <div className="p-6 text-center text-xs text-[#666666] space-y-2">
-              <p>No celebrations found.</p>
+            <div className="p-6 text-center text-xs text-[#666666] space-y-3">
+              <div className="w-10 h-10 rounded-full bg-[#f8f7f4] border border-[#e3e3e2] flex items-center justify-center mx-auto text-[#714cb6]">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="font-[540] text-[#292827]">No celebrations yet</p>
+                <p className="text-[11px] text-[#666666] mt-0.5">
+                  Plan your first wedding, birthday, or community gala.
+                </p>
+              </div>
               <button
                 onClick={() => setIsWizardModalOpen(true)}
-                className="text-[#714cb6] hover:underline font-medium"
+                className="w-full py-2 px-3 rounded-xl bg-white hover:bg-[#f8f7f4] border border-[#e3e3e2] text-xs font-[540] text-[#421d24] transition-all shadow-xs flex items-center justify-center space-x-1"
               >
-                + Plan your first event
+                <Plus className="w-3.5 h-3.5 text-[#714cb6]" />
+                <span>Create Celebration</span>
               </button>
             </div>
           ) : (

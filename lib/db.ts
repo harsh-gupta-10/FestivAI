@@ -1,12 +1,11 @@
 import { getAppBindings } from "./cloudflare.ts";
 import type { EventRecord, RsvpRecord, AIEventPlan } from "../types/index.ts";
-import { SAMPLE_EVENT, SAMPLE_RSVPS } from "./sample-data.ts";
 
 let isTablesInitialized = false;
 
 /**
  * Automatically creates events and rsvps tables and indexes in Cloudflare D1
- * if they do not exist yet. Also seeds sample-wedding-2026.
+ * if they do not exist yet.
  */
 export async function ensureDbTables(DB: any): Promise<void> {
   if (isTablesInitialized) return;
@@ -54,59 +53,7 @@ export async function ensureDbTables(DB: any): Promise<void> {
     // 3. Create indexes
     await DB.prepare(`CREATE INDEX IF NOT EXISTS idx_rsvps_event_id ON rsvps(event_id)`).run().catch(() => {});
     await DB.prepare(`CREATE INDEX IF NOT EXISTS idx_events_slug ON events(slug)`).run().catch(() => {});
-
-    // 4. Seed sample event if not already in DB
-    try {
-      const existing = await DB.prepare("SELECT id FROM events WHERE id = ?").bind(SAMPLE_EVENT.id).first();
-      if (!existing) {
-        await DB.prepare(`
-          INSERT INTO events (
-            id, slug, organizer_name, organizer_email, event_type, title,
-            event_date, location, guest_count, total_budget, currency, vibe,
-            banner_r2_key, ai_plan_json, last_prompt, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(
-          SAMPLE_EVENT.id,
-          SAMPLE_EVENT.slug,
-          SAMPLE_EVENT.organizer_name,
-          SAMPLE_EVENT.organizer_email,
-          SAMPLE_EVENT.event_type,
-          SAMPLE_EVENT.title,
-          SAMPLE_EVENT.event_date,
-          SAMPLE_EVENT.location,
-          SAMPLE_EVENT.guest_count,
-          SAMPLE_EVENT.total_budget,
-          SAMPLE_EVENT.currency,
-          SAMPLE_EVENT.vibe,
-          SAMPLE_EVENT.banner_r2_key || null,
-          SAMPLE_EVENT.ai_plan_json,
-          SAMPLE_EVENT.last_prompt || null,
-          SAMPLE_EVENT.created_at
-        ).run();
-
-        // Seed sample RSVPs
-        for (const rsvp of SAMPLE_RSVPS) {
-          await DB.prepare(`
-            INSERT INTO rsvps (
-              id, event_id, guest_name, guest_email, status,
-              attendees_count, dietary_notes, message, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).bind(
-            rsvp.id,
-            rsvp.event_id,
-            rsvp.guest_name,
-            rsvp.guest_email,
-            rsvp.status,
-            rsvp.attendees_count,
-            rsvp.dietary_notes || null,
-            rsvp.message || null,
-            rsvp.created_at
-          ).run().catch(() => {});
-        }
-      }
-    } catch (seedErr) {
-      // ignore seed errors
-    }
+    await DB.prepare(`CREATE INDEX IF NOT EXISTS idx_events_email ON events(organizer_email)`).run().catch(() => {});
 
     isTablesInitialized = true;
   } catch (err: any) {
@@ -120,16 +67,7 @@ export async function getEventByIdOrSlug(idOrSlug: string): Promise<{ event: Eve
 
   try {
     const query = "SELECT * FROM events WHERE id = ? OR slug = ? LIMIT 1";
-    let result = await DB.prepare(query).bind(idOrSlug, idOrSlug).first();
-
-    if (!result && idOrSlug === SAMPLE_EVENT.id) {
-      // Re-seed and re-check if sample event
-      await ensureDbTables(DB);
-      result = await DB.prepare(query).bind(idOrSlug, idOrSlug).first();
-      if (!result) {
-        return { event: SAMPLE_EVENT, plan: JSON.parse(SAMPLE_EVENT.ai_plan_json) };
-      }
-    }
+    const result = await DB.prepare(query).bind(idOrSlug, idOrSlug).first();
 
     if (!result) return null;
 
@@ -157,6 +95,7 @@ export async function createEventRecord(event: Omit<EventRecord, "created_at">):
   await ensureDbTables(DB);
 
   const createdAt = new Date().toISOString();
+  const normalizedEmail = (event.organizer_email || "").trim().toLowerCase();
 
   const query = `
     INSERT INTO events (
@@ -171,7 +110,7 @@ export async function createEventRecord(event: Omit<EventRecord, "created_at">):
       event.id,
       event.slug,
       event.organizer_name,
-      event.organizer_email,
+      normalizedEmail,
       event.event_type,
       event.title,
       event.event_date,
@@ -196,7 +135,7 @@ export async function createEventRecord(event: Omit<EventRecord, "created_at">):
         event.id,
         event.slug,
         event.organizer_name,
-        event.organizer_email,
+        normalizedEmail,
         event.event_type,
         event.title,
         event.event_date,
@@ -269,7 +208,7 @@ export async function getRsvpsForEvent(eventId: string): Promise<RsvpRecord[]> {
   }
 }
 
-export async function insertRsvp(rsvp: Omit<RsvpRecord, "created_at">): Promise<boolean> {
+export async function createRsvpRecord(rsvp: Omit<RsvpRecord, "created_at">): Promise<boolean> {
   const { DB } = await getAppBindings();
   await ensureDbTables(DB);
 
@@ -324,20 +263,18 @@ export async function getEventsByOrganizerEmail(email?: string): Promise<EventRe
 
   try {
     if (email && email.trim()) {
-      const query = "SELECT * FROM events WHERE organizer_email = ? ORDER BY created_at DESC";
-      const res = await DB.prepare(query).bind(email.trim()).all();
-      const results = (res.results as EventRecord[]) || [];
-      if (results.length > 0) return results;
+      const normalized = email.trim().toLowerCase();
+      const query = "SELECT * FROM events WHERE lower(organizer_email) = ? ORDER BY created_at DESC";
+      const res = await DB.prepare(query).bind(normalized).all();
+      return (res.results as EventRecord[]) || [];
     }
 
-    // Default fallback: return all events from DB or the seeded sample event
-    const allQuery = "SELECT * FROM events ORDER BY created_at DESC LIMIT 30";
-    const allRes = await DB.prepare(allQuery).all();
-    const allResults = (allRes.results as EventRecord[]) || [];
-    return allResults.length > 0 ? allResults : [SAMPLE_EVENT];
+    return [];
   } catch (error) {
     console.error("Error fetching events by organizer:", error);
-    return [SAMPLE_EVENT];
+    return [];
   }
 }
+
+export const insertRsvp = createRsvpRecord;
 

@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
         id: newId,
         slug,
         organizer_name: organizer,
-        organizer_email: userEmail || "host@example.com",
+        organizer_email: userEmail ? userEmail.trim().toLowerCase() : "",
         event_type: eventType,
         title,
         event_date: dateStr,

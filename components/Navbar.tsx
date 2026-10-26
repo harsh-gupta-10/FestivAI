@@ -39,13 +39,9 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
 
         {/* Center / Edge Badges */}
         <div className="hidden md:flex items-center space-x-2 text-xs font-[460] text-[#666666]">
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-white border border-[#e3e3e2] text-[#292827]">
-            <Cloud className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
-            Workers Runtime
-          </span>
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-white border border-[#e3e3e2] text-[#292827]">
-            <Database className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
-            D1 SQLite & R2
+          <span className="inline-flex items-center px-3 py-1 rounded-full bg-white border border-[#e3e3e2] text-[#292827] shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse mr-2" />
+            <span>Cloudflare Edge Network</span>
           </span>
         </div>
 
@@ -56,15 +52,7 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
             className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-[540] text-[#292827] hover:text-white hover:bg-[#421d24] bg-white border border-[#e3e3e2] shadow-sm transition-colors"
           >
             <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#714cb6]" />
-            <span>AI Concierge</span>
-          </Link>
-
-          <Link
-            href="/events/sample-wedding-2026/dashboard"
-            className="hidden sm:inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-[460] text-[#292827] hover:text-[#714cb6] bg-white hover:bg-[#f8f7f5] border border-[#e3e3e2] transition-colors"
-          >
-            <Calendar className="w-3.5 h-3.5 mr-1.5 text-[#714cb6]" />
-            Sample Dashboard
+            <span>Workspace</span>
           </Link>
 
           {onToggleInspector && (
