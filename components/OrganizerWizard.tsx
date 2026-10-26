@@ -21,6 +21,8 @@ import {
   Briefcase,
   Flame,
 } from "lucide-react";
+import { getCurrencySymbol, formatCurrency } from "@/lib/currency";
+
 
 interface OrganizerWizardProps {
   onOpenSettings: () => void;
@@ -98,16 +100,16 @@ export function OrganizerWizard({
 
   // Auto-Fix Minimum Budget helper
   const handleAutoFixBudget = () => {
-    let fixedBudget = 5000;
-    if (eventType === "wedding") fixedBudget = 15000;
-    if (eventType === "birthday") fixedBudget = 3000;
-    if (eventType === "community") fixedBudget = 8000;
+    let fixedBudget = currency === "INR" ? 350000 : 5000;
+    if (eventType === "wedding") fixedBudget = currency === "INR" ? 1200000 : 15000;
+    if (eventType === "birthday") fixedBudget = currency === "INR" ? 250000 : 3000;
+    if (eventType === "community") fixedBudget = currency === "INR" ? 600000 : 8000;
     setTotalBudget(fixedBudget);
     setBudgetInteracted(true);
   };
 
-  // Quick Load Presets for Judges Video Rubric
-  const loadQuickDemo = (type: "wedding" | "birthday" | "edgecase") => {
+  // Quick Load Presets
+  const loadQuickDemo = (type: "wedding" | "birthday" | "royal" | "edgecase") => {
     if (type === "wedding") {
       setOrganizerName("Elena & David Vance");
       setOrganizerEmail("elena.vance@example.com");
@@ -134,6 +136,21 @@ export function OrganizerWizard({
       setTotalBudget(6500);
       setCurrency("USD");
       setVibe("Retro Neon 80s & Cyberpunk Glow");
+      setEmailInteracted(true);
+      setBudgetInteracted(true);
+      setGuestsInteracted(true);
+      setDateInteracted(true);
+    } else if (type === "royal") {
+      setOrganizerName("Ananya & Rohan Sharma");
+      setOrganizerEmail("ananya.sharma@example.com");
+      setEventType("wedding");
+      setTitle("Ananya & Rohan's Royal Heritage Wedding");
+      setEventDate("2026-12-18");
+      setLocation("Taj Lake Palace, Udaipur, Rajasthan");
+      setGuestCount(200);
+      setTotalBudget(1500000);
+      setCurrency("INR");
+      setVibe("Royal Heritage & Palatial Elegance");
       setEmailInteracted(true);
       setBudgetInteracted(true);
       setGuestsInteracted(true);
@@ -302,6 +319,13 @@ export function OrganizerWizard({
             className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#f8f7f5] border border-[#e3e3e2] text-[#292827] transition-all flex items-center space-x-1"
           >
             <span>🎂 Skyline Rooftop Celebration ($6.5k)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => loadQuickDemo("royal")}
+            className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#f8f7f5] border border-[#e3e3e2] text-[#292827] transition-all flex items-center space-x-1"
+          >
+            <span>✨ Royal Palace Heritage (₹15L INR)</span>
           </button>
         </div>
       </div>
@@ -562,14 +586,15 @@ export function OrganizerWizard({
                   id="currency-select"
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-white border border-[#e3e3e2] text-[#292827] text-sm focus:outline-none focus:ring-2 focus:ring-[#714cb6]/40"
+                  className="w-full px-4 py-2.5 rounded-xl bg-white border border-[#e3e3e2] text-[#292827] text-sm focus:outline-none focus:ring-2 focus:ring-[#714cb6]/40 font-medium"
                 >
+                  <option value="INR">INR (₹) Indian Rupee</option>
                   <option value="USD">USD ($) United States</option>
                   <option value="EUR">EUR (€) Eurozone</option>
                   <option value="GBP">GBP (£) British Pound</option>
-                  <option value="INR">INR (₹) Indian Rupee</option>
-                  <option value="CAD">CAD ($) Canada</option>
-                  <option value="AUD">AUD ($) Australia</option>
+                  <option value="AED">AED (AED) UAE Dirham</option>
+                  <option value="CAD">CAD (CA$) Canada</option>
+                  <option value="AUD">AUD (A$) Australia</option>
                 </select>
               </div>
 
@@ -577,7 +602,7 @@ export function OrganizerWizard({
               <div className="sm:col-span-2">
                 <div className="flex items-center justify-between mb-1.5">
                   <label htmlFor="total-budget" className="text-xs font-semibold uppercase tracking-wider text-[#666666]">
-                    Total Estimated Budget <span className="text-[#421d24]">*</span>
+                    Total Estimated Budget ({getCurrencySymbol(currency)}) <span className="text-[#421d24]">*</span>
                   </label>
                   {isBudgetValid && budgetInteracted && (
                     <span className="text-[11px] text-emerald-800 font-semibold flex items-center">
@@ -587,8 +612,8 @@ export function OrganizerWizard({
                   )}
                 </div>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#666666]">
-                    <DollarSign className="w-4 h-4" />
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#421d24] font-bold text-sm">
+                    <span>{getCurrencySymbol(currency)}</span>
                   </div>
                   <input
                     id="total-budget"
@@ -603,7 +628,7 @@ export function OrganizerWizard({
                       setBudgetInteracted(true);
                     }}
                     onBlur={() => setBudgetInteracted(true)}
-                    placeholder="e.g. 15000 (try -500)"
+                    placeholder={`e.g. ${currency === "INR" ? "15,00,000" : "15000"} (try -500)`}
                     className={`w-full pl-10 pr-4 py-2.5 rounded-xl bg-white border text-sm text-[#292827] focus:outline-none transition-all ${
                       showBudgetError
                         ? "border-[#421d24] ring-2 ring-[#421d24]/20 bg-rose-50/30"
@@ -622,7 +647,7 @@ export function OrganizerWizard({
                           {isBudgetNegative ? "Negative Budget Rejected (-" + Math.abs(numBudget) + ")" : "Unrealistic Budget (< 50)"}
                         </strong>
                         <span className="text-[#292827] text-[11px] leading-relaxed">
-                          Events require a positive budget of at least 50 {currency} to allocate realistic vendor and catering minimums.
+                          Events require a positive budget of at least {getCurrencySymbol(currency)}50 ({currency}) to allocate realistic vendor and catering minimums.
                         </span>
                       </div>
                     </div>
@@ -632,7 +657,7 @@ export function OrganizerWizard({
                       className="px-3 py-1.5 rounded-xl bg-[#421d24] hover:bg-[#572730] text-white font-bold text-xs transition-all flex items-center justify-center space-x-1.5 flex-shrink-0 shadow-sm"
                     >
                       <Wand2 className="w-3.5 h-3.5" />
-                      <span>Auto-Fix Minimum Budget</span>
+                      <span>Auto-Fix Minimum Budget ({getCurrencySymbol(currency)})</span>
                     </button>
                   </div>
                 )}

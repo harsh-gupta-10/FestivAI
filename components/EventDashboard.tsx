@@ -25,6 +25,8 @@ import {
   FileCheck,
   MessageSquare,
 } from "lucide-react";
+import { formatCurrency, getCurrencySymbol, SUPPORTED_CURRENCIES } from "@/lib/currency";
+
 
 export interface EventDashboardProps {
   params: Promise<{ id: string }>;
@@ -165,6 +167,23 @@ export function EventDashboard({ params }: EventDashboardProps) {
     const updatedPlan: AIEventPlan = { ...plan, budgetBreakdown: updatedBudget };
     debouncedSyncPlan(updatedPlan);
   };
+
+  // Change currency and persist in D1
+  const handleCurrencyChange = async (newCurrency: string) => {
+    if (!event) return;
+    const updatedCurrency = newCurrency.toUpperCase().trim();
+    setEvent({ ...event, currency: updatedCurrency });
+    try {
+      await fetch(`/api/events/${eventId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currency: updatedCurrency }),
+      });
+    } catch (err) {
+      console.error("Failed to update currency in D1:", err);
+    }
+  };
+
 
   // Execute Dynamic Re-Plan
   const handleExecuteReplan = async (promptOverride?: string) => {
@@ -349,10 +368,24 @@ export function EventDashboard({ params }: EventDashboardProps) {
                 <Users className="w-3.5 h-3.5 mr-1.5 text-[#714cb6]" />
                 Target: {event.guest_count} Guests
               </span>
-              <span className="flex items-center">
-                <DollarSign className="w-3.5 h-3.5 mr-1.5 text-emerald-700" />
-                Budget: {event.total_budget.toLocaleString()} {event.currency}
-              </span>
+              <div className="flex items-center space-x-1.5 bg-[#f8f7f5] px-2.5 py-1 rounded-xl border border-[#e3e3e2]">
+                <span className="font-bold text-sm text-[#421d24]">{getCurrencySymbol(event.currency)}</span>
+                <span className="text-xs font-semibold text-[#292827]">
+                  {formatCurrency(event.total_budget, event.currency)}
+                </span>
+                <select
+                  value={event.currency}
+                  onChange={(e) => handleCurrencyChange(e.target.value)}
+                  className="bg-transparent text-[11px] font-semibold text-[#714cb6] focus:outline-none cursor-pointer border-l border-[#e3e3e2] pl-1.5 ml-1"
+                  title="Switch celebration currency"
+                >
+                  {Object.values(SUPPORTED_CURRENCIES).map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.code} ({c.symbol})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -634,16 +667,16 @@ export function EventDashboard({ params }: EventDashboardProps) {
             <div className="flex items-center space-x-3 text-xs font-semibold">
               <div className="px-3.5 py-1.5 rounded-xl bg-[#f8f7f5] border border-[#e3e3e2]">
                 <span className="text-[#666666] block text-[10px]">Total Allocated</span>
-                <span className="text-[#292827] font-mono text-sm">{totalAllocated.toLocaleString()} {event.currency}</span>
+                <span className="text-[#292827] font-mono text-sm">{formatCurrency(totalAllocated, event.currency)}</span>
               </div>
               <div className="px-3.5 py-1.5 rounded-xl bg-[#f8f7f5] border border-[#e3e3e2]">
                 <span className="text-[#666666] block text-[10px]">Actual Spent</span>
-                <span className="text-emerald-800 font-mono text-sm">{totalSpent.toLocaleString()} {event.currency}</span>
+                <span className="text-emerald-800 font-mono text-sm">{formatCurrency(totalSpent, event.currency)}</span>
               </div>
               <div className="px-3.5 py-1.5 rounded-xl bg-[#f8f7f5] border border-[#e3e3e2]">
                 <span className="text-[#666666] block text-[10px]">Remaining</span>
                 <span className={`font-mono text-sm ${budgetVariance >= 0 ? "text-emerald-800" : "text-rose-700"}`}>
-                  {budgetVariance.toLocaleString()} {event.currency}
+                  {formatCurrency(budgetVariance, event.currency, { includeSign: true })}
                 </span>
               </div>
             </div>
@@ -653,7 +686,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
           <div className="mb-6 space-y-1.5">
             <div className="flex justify-between text-xs text-[#666666] font-medium">
               <span>Budget Utilization ({budgetSpentPercent}%)</span>
-              <span>{totalSpent.toLocaleString()} / {event.total_budget.toLocaleString()} {event.currency}</span>
+              <span>{formatCurrency(totalSpent, event.currency)} / {formatCurrency(event.total_budget, event.currency)}</span>
             </div>
             <div className="w-full bg-[#f2f0eb] rounded-full h-2.5 overflow-hidden border border-[#e3e3e2]">
               <div
@@ -680,7 +713,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
                     <div>
                       <h4 className="font-bold text-sm text-[#292827]">{cat.category}</h4>
                       <span className="text-[11px] text-[#714cb6] font-medium">
-                        Target: {cat.allocatedAmount.toLocaleString()} {event.currency} ({cat.percentage}%)
+                        Target: {formatCurrency(cat.allocatedAmount, event.currency)} ({cat.percentage}%)
                       </span>
                     </div>
                     <span className="text-xs font-mono font-bold text-[#666666]">
@@ -694,14 +727,14 @@ export function EventDashboard({ params }: EventDashboardProps) {
                       Actual Spent:
                     </label>
                     <div className="relative flex-1">
-                      <span className="absolute left-2.5 top-1 text-xs text-[#999999]">{event.currency}</span>
+                      <span className="absolute left-2.5 top-1 text-xs font-bold text-[#421d24]">{getCurrencySymbol(event.currency)}</span>
                       <input
                         type="number"
                         aria-label={`Actual spent amount for ${cat.category}`}
                         value={cat.actualSpent || ""}
                         placeholder="0"
                         onChange={(e) => handleUpdateActualSpent(cat.id, e.target.value)}
-                        className="w-full pl-10 pr-2.5 py-1 text-xs rounded-lg bg-[#f8f7f5] border border-[#e3e3e2] text-[#292827] font-mono focus:outline-none focus:ring-1 focus:ring-[#714cb6]"
+                        className="w-full pl-8 pr-2.5 py-1 text-xs rounded-lg bg-[#f8f7f5] border border-[#e3e3e2] text-[#292827] font-mono focus:outline-none focus:ring-1 focus:ring-[#714cb6]"
                       />
                     </div>
                   </div>

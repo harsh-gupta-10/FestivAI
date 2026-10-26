@@ -34,10 +34,21 @@ import {
   LogIn,
   Wand2,
   ChevronDown,
+  ChevronUp,
   ShieldAlert,
+  CloudSun,
+  Wind,
+  Droplets,
+  Sun,
+  Globe,
+  Coins,
+  Database,
+  RotateCcw,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { OrganizerWizard } from "@/components/OrganizerWizard";
+import { formatCurrency, getCurrencySymbol, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import confetti from "canvas-confetti";
 
 interface EventItem {
@@ -57,13 +68,31 @@ interface EventItem {
   created_at: string;
 }
 
+export interface ToolCallItem {
+  id: string;
+  tool: "check_weather" | "search_web" | "sync_d1" | "currency_switch";
+  title: string;
+  summary: string;
+  data?: any;
+  status: "completed" | "running" | "error";
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
+  toolCalls?: ToolCallItem[];
   actionCard?: {
-    type: "budget_summary" | "rsvp_summary" | "event_created" | "milestone_list" | "ideas_grid" | "alert";
+    type:
+      | "budget_summary"
+      | "rsvp_summary"
+      | "event_created"
+      | "milestone_list"
+      | "ideas_grid"
+      | "alert"
+      | "weather_card"
+      | "web_results";
     title?: string;
     data?: any;
   };
@@ -109,6 +138,8 @@ export function ChatWorkspace({
   const [inputValue, setInputValue] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
+
 
   // Proactive Notification state
   const [activeAlerts, setActiveAlerts] = useState<ProactiveAlert[]>([]);
@@ -282,10 +313,16 @@ export function ChatWorkspace({
         role: "assistant",
         content: data.response || "I have updated your celebration plan.",
         createdAt: new Date().toISOString(),
+        toolCalls: data.toolCalls,
         actionCard: data.actionCard,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
+
+      // If currency was changed, reload events to sync all numbers and icons
+      if (data.toolCalls?.some((t: any) => t.tool === "currency_switch")) {
+        await fetchEvents();
+      }
 
       // If an event was created conversationally, reload events and trigger confetti
       if (data.actionCard?.type === "event_created") {
@@ -314,6 +351,46 @@ export function ChatWorkspace({
     } finally {
       setIsAiLoading(false);
     }
+  };
+
+  // Change currency directly from Workspace UI
+  const handleCurrencyChange = async (newCurrency: string) => {
+    const updatedCode = newCurrency.toUpperCase().trim();
+    const sym = getCurrencySymbol(updatedCode);
+
+    if (activeEvent) {
+      try {
+        await fetch(`/api/events/${activeEvent.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currency: updatedCode }),
+        });
+        setEvents((prev) =>
+          prev.map((e) => (e.id === activeEvent.id ? { ...e, currency: updatedCode } : e))
+        );
+      } catch (err) {
+        console.error("Failed to update currency in D1:", err);
+      }
+    }
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `sys-curr-${Date.now()}`,
+        role: "assistant",
+        content: `💱 **Currency Switched to ${updatedCode} (${sym})**\n\nAll budget allocations, vendor ledger items, and financial metrics are now displayed in **${sym}** across your workspace and Command Center.`,
+        createdAt: new Date().toISOString(),
+        toolCalls: [
+          {
+            id: `tool-${Date.now()}`,
+            tool: "currency_switch",
+            title: `Active Currency: ${updatedCode} (${sym})`,
+            summary: `Updated Cloudflare D1 persistence and live ledger formatting.`,
+            status: "completed",
+          },
+        ],
+      },
+    ]);
   };
 
   // Handle Form Wizard Creation Success
@@ -420,6 +497,18 @@ export function ChatWorkspace({
             );
           }
 
+          // Blockquotes / Callout cards
+          if (line.trim().startsWith("> ")) {
+            return (
+              <div
+                key={idx}
+                className="pl-3.5 py-1.5 my-1.5 border-l-2 border-[#714cb6] bg-[#f8f7f4] text-xs text-[#292827] italic rounded-r-lg"
+              >
+                {parseInlineStyles(line.trim().slice(2))}
+              </div>
+            );
+          }
+
           // Bullet points
           if (line.trim().startsWith("- ") || line.trim().startsWith("• ")) {
             const clean = line.trim().replace(/^[-•]\s*/, "");
@@ -442,15 +531,34 @@ export function ChatWorkspace({
             );
           }
 
+          // Markdown table row
+          if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+            const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+            const isSeparator = cells.every((c) => /^[-:]+$/.test(c));
+            if (isSeparator) return null;
+
+            return (
+              <div key={idx} className="overflow-x-auto my-1">
+                <div className="grid grid-flow-col auto-cols-fr gap-2 p-1.5 bg-[#f8f7f4] rounded-md text-xs border border-[#e3e3e2]">
+                  {cells.map((cell, cIdx) => (
+                    <div key={cIdx} className="font-medium text-[#292827] px-1 truncate">
+                      {parseInlineStyles(cell)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
           return <p key={idx}>{parseInlineStyles(line)}</p>;
         })}
       </div>
     );
   };
 
-  // Simple parser for bold **text** and `code`
+  // Parser for bold **text**, `code`, and [link](url)
   const parseInlineStyles = (str: string) => {
-    const parts = str.split(/(\*\*.*?\*\*|`.*?`)/g);
+    const parts = str.split(/(\*\*.*?\*\*|`.*?`|\[.*?\]\(.*?\))/g);
     return parts.map((part, i) => {
       if (part.startsWith("**") && part.endsWith("**")) {
         return (
@@ -467,6 +575,21 @@ export function ChatWorkspace({
           >
             {part.slice(1, -1)}
           </code>
+        );
+      }
+      const linkMatch = part.match(/^\[(.*?)\]\((.*?)\)$/);
+      if (linkMatch) {
+        return (
+          <a
+            key={i}
+            href={linkMatch[2]}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[#714cb6] hover:underline font-medium inline-flex items-center space-x-0.5"
+          >
+            <span>{linkMatch[1]}</span>
+            <ExternalLink className="w-2.5 h-2.5 inline-block ml-0.5" />
+          </a>
         );
       }
       return part;
@@ -620,8 +743,8 @@ export function ChatWorkspace({
                       </div>
 
                       <div className="flex items-center space-x-1.5 mt-1.5">
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-[#e3e3e2] text-[#292827]">
-                          ${Number(ev.total_budget || 0).toLocaleString()} {ev.currency}
+                        <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-white border border-[#e3e3e2] text-[#292827]">
+                          {formatCurrency(Number(ev.total_budget || 0), ev.currency)}
                         </span>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f2f0eb] text-[#666666]">
                           {ev.guest_count} guests
@@ -738,6 +861,26 @@ export function ChatWorkspace({
 
           {/* Top Bar Actions & Model Badge */}
           <div className="flex items-center space-x-2">
+            {/* Currency Selector Pill */}
+            <div className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-white border border-[#e3e3e2] text-xs shadow-2xs">
+              <span className="font-bold text-[#421d24] text-xs">
+                {getCurrencySymbol(activeEvent?.currency || "USD")}
+              </span>
+              <select
+                aria-label="Active currency selector"
+                value={activeEvent?.currency || "USD"}
+                onChange={(e) => handleCurrencyChange(e.target.value)}
+                className="bg-transparent text-[11px] font-semibold text-[#292827] focus:outline-none cursor-pointer"
+                title="Switch active celebration currency (e.g. INR ₹, USD $, EUR €)"
+              >
+                {Object.values(SUPPORTED_CURRENCIES).map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.code} ({c.symbol})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <span className="hidden lg:inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[#d4c7ff]/30 text-[#714cb6] text-[11px] font-mono border border-[#d4c7ff]">
               <Sparkles className="w-3 h-3" />
               <span>{selectedModel}</span>
@@ -941,9 +1084,70 @@ export function ChatWorkspace({
                       className={`rounded-2xl p-4 sm:p-5 shadow-xs ${
                         isUser
                           ? "bg-[#421d24] text-white rounded-tr-xs"
-                          : "bg-white border border-[#e3e3e2] text-[#292827] rounded-tl-xs"
+                          : "bg-white border border-[#e3e3e2] text-[#292827] rounded-tl-xs w-full"
                       }`}
                     >
+                      {/* ChatGPT-style Tool Invocation Chips */}
+                      {!isUser && msg.toolCalls && msg.toolCalls.length > 0 && (
+                        <div className="space-y-2 mb-3.5">
+                          {msg.toolCalls.map((tc) => {
+                            const isExpanded = expandedTools[tc.id];
+                            return (
+                              <div
+                                key={tc.id}
+                                className="rounded-xl border border-[#e3e3e2] bg-[#fcfbf9] overflow-hidden text-xs"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedTools((prev) => ({
+                                      ...prev,
+                                      [tc.id]: !prev[tc.id],
+                                    }))
+                                  }
+                                  className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-[#f8f7f4] transition-colors"
+                                >
+                                  <div className="flex items-center space-x-2 min-w-0">
+                                    {tc.tool === "check_weather" ? (
+                                      <CloudSun className="w-4 h-4 text-amber-600 shrink-0" />
+                                    ) : tc.tool === "search_web" ? (
+                                      <Globe className="w-4 h-4 text-sky-600 shrink-0" />
+                                    ) : tc.tool === "currency_switch" ? (
+                                      <Coins className="w-4 h-4 text-[#714cb6] shrink-0" />
+                                    ) : (
+                                      <Database className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    )}
+                                    <span className="font-semibold text-[#292827] truncate">
+                                      {tc.title}
+                                    </span>
+                                    <span className="text-[11px] text-[#666666] hidden sm:inline truncate">
+                                      • {tc.summary}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center space-x-1 text-[#666666] shrink-0 ml-2">
+                                    <span className="text-[10px]">
+                                      {isExpanded ? "Collapse" : "Inspect"}
+                                    </span>
+                                    {isExpanded ? (
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    )}
+                                  </div>
+                                </button>
+                                {isExpanded && tc.data && (
+                                  <div className="px-3 pb-3 pt-1 border-t border-[#e3e3e2]/60 text-[11px] font-mono bg-white text-[#292827] max-h-48 overflow-y-auto">
+                                    <pre className="whitespace-pre-wrap">
+                                      {JSON.stringify(tc.data, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
                       {isUser ? (
                         <div className="text-sm font-[460] whitespace-pre-wrap">{msg.content}</div>
                       ) : (
@@ -963,9 +1167,11 @@ export function ChatWorkspace({
                                     Stored on Cloudflare D1
                                   </span>
                                 </div>
-                                <span className="text-xs font-mono font-medium text-[#714cb6]">
-                                  ${Number(msg.actionCard.data.totalBudget).toLocaleString()}{" "}
-                                  {msg.actionCard.data.currency}
+                                <span className="text-xs font-mono font-bold text-[#714cb6]">
+                                  {formatCurrency(
+                                    Number(msg.actionCard.data.totalBudget),
+                                    msg.actionCard.data.currency
+                                  )}
                                 </span>
                               </div>
 
@@ -1040,20 +1246,30 @@ export function ChatWorkspace({
                                       : "bg-rose-100 text-rose-800"
                                   }`}
                                 >
-                                  {msg.actionCard.data.variance >= 0
-                                    ? `+${msg.actionCard.data.variance.toLocaleString()} Buffer`
-                                    : `${msg.actionCard.data.variance.toLocaleString()} Over`}
+                                  {formatCurrency(
+                                    msg.actionCard.data.variance,
+                                    msg.actionCard.data.currency,
+                                    { includeSign: true }
+                                  )}{" "}
+                                  {msg.actionCard.data.variance >= 0 ? "Buffer" : "Over"}
                                 </span>
                               </div>
 
                               <div className="space-y-1">
                                 <div className="flex justify-between text-xs text-[#666666]">
                                   <span>
-                                    Spent: ${msg.actionCard.data.totalSpent.toLocaleString()}
+                                    Spent:{" "}
+                                    {formatCurrency(
+                                      msg.actionCard.data.totalSpent,
+                                      msg.actionCard.data.currency
+                                    )}
                                   </span>
                                   <span>
-                                    Cap: ${msg.actionCard.data.totalAlloc.toLocaleString()}{" "}
-                                    {msg.actionCard.data.currency}
+                                    Cap:{" "}
+                                    {formatCurrency(
+                                      msg.actionCard.data.totalAlloc,
+                                      msg.actionCard.data.currency
+                                    )}
                                   </span>
                                 </div>
                                 <div className="w-full h-2 rounded-full bg-[#e3e3e2] overflow-hidden">
@@ -1085,7 +1301,147 @@ export function ChatWorkspace({
                             </div>
                           )}
 
-                          {/* 3. RSVP Summary Action Card */}
+                          {/* 3. Weather Action Card */}
+                          {msg.actionCard.type === "weather_card" && (
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-[#fcfbf9] to-amber-50/30 border border-[#e3e3e2] space-y-3.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <Sun className="w-4 h-4 text-amber-600" />
+                                  <span className="text-xs font-semibold uppercase text-[#421d24] tracking-wider">
+                                    Venue Weather Intelligence
+                                  </span>
+                                </div>
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                    msg.actionCard.data.verdict === "ideal"
+                                      ? "bg-emerald-100 text-emerald-800"
+                                      : msg.actionCard.data.verdict === "favorable"
+                                      ? "bg-amber-100 text-amber-800"
+                                      : "bg-rose-100 text-rose-800"
+                                  }`}
+                                >
+                                  Score: {msg.actionCard.data.outdoorSuitabilityScore} / 10 (
+                                  {msg.actionCard.data.verdict.toUpperCase().replace("_", " ")})
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
+                                <div>
+                                  <div className="font-serif text-base font-semibold text-[#292827]">
+                                    {msg.actionCard.data.location}
+                                  </div>
+                                  <div className="text-xs text-[#666666]">
+                                    Celebration Date: {msg.actionCard.data.date} •{" "}
+                                    {msg.actionCard.data.condition}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-2xl font-bold font-mono text-[#292827]">
+                                    {msg.actionCard.data.temperatureC.high}°C
+                                  </span>
+                                  <span className="text-xs text-[#666666] ml-1">
+                                    ({msg.actionCard.data.temperatureF.high}°F)
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                <div className="p-2 rounded-lg bg-white border border-[#e3e3e2]">
+                                  <div className="text-[10px] text-[#666666] flex items-center space-x-1">
+                                    <Droplets className="w-3 h-3 text-sky-500" />
+                                    <span>Rain Risk</span>
+                                  </div>
+                                  <div className="font-semibold text-[#292827] mt-0.5">
+                                    {msg.actionCard.data.precipitationProbability}%
+                                  </div>
+                                </div>
+                                <div className="p-2 rounded-lg bg-white border border-[#e3e3e2]">
+                                  <div className="text-[10px] text-[#666666] flex items-center space-x-1">
+                                    <Wind className="w-3 h-3 text-teal-600" />
+                                    <span>Wind Speed</span>
+                                  </div>
+                                  <div className="font-semibold text-[#292827] mt-0.5">
+                                    {msg.actionCard.data.windSpeedKmH} km/h
+                                  </div>
+                                </div>
+                                <div className="p-2 rounded-lg bg-white border border-[#e3e3e2]">
+                                  <div className="text-[10px] text-[#666666]">Relative Humidity</div>
+                                  <div className="font-semibold text-[#292827] mt-0.5">
+                                    {msg.actionCard.data.humidity}%
+                                  </div>
+                                </div>
+                                <div className="p-2 rounded-lg bg-white border border-[#e3e3e2]">
+                                  <div className="text-[10px] text-[#666666]">Estimated Sunset</div>
+                                  <div className="font-semibold text-[#292827] mt-0.5">
+                                    {msg.actionCard.data.sunsetTime}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {msg.actionCard.data.actionableAdvice && (
+                                <div className="p-2.5 rounded-lg bg-white border border-[#e3e3e2] space-y-1">
+                                  <div className="text-[10px] font-semibold text-[#421d24] uppercase tracking-wide">
+                                    Planning Recommendations:
+                                  </div>
+                                  {msg.actionCard.data.actionableAdvice.map(
+                                    (adv: string, i: number) => (
+                                      <div
+                                        key={i}
+                                        className="text-[11px] text-[#666666] flex items-start space-x-1.5"
+                                      >
+                                        <span className="text-amber-600">•</span>
+                                        <span>{adv}</span>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 4. Web Search Action Card */}
+                          {msg.actionCard.type === "web_results" && (
+                            <div className="p-4 rounded-xl bg-[#fcfbf9] border border-[#e3e3e2] space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <Globe className="w-4 h-4 text-sky-600" />
+                                  <span className="text-xs font-semibold uppercase text-[#421d24] tracking-wider">
+                                    Live Internet Search Findings
+                                  </span>
+                                </div>
+                                <span className="text-[11px] text-[#666666]">
+                                  {msg.actionCard.data.resultsCount} Verified Sources
+                                </span>
+                              </div>
+
+                              <div className="space-y-2">
+                                {msg.actionCard.data.sources?.map((src: any, i: number) => (
+                                  <a
+                                    key={i}
+                                    href={src.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block p-2.5 rounded-lg bg-white border border-[#e3e3e2] hover:border-[#714cb6] transition-all group"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-semibold text-[#292827] group-hover:text-[#714cb6] transition-colors truncate">
+                                        {src.title}
+                                      </span>
+                                      <ExternalLink className="w-3 h-3 text-[#666666] group-hover:text-[#714cb6] shrink-0 ml-1.5" />
+                                    </div>
+                                    <div className="text-[10px] text-[#714cb6] font-medium mt-0.5">
+                                      {src.sourceName}
+                                    </div>
+                                    <p className="text-[11px] text-[#666666] mt-1 line-clamp-2 leading-relaxed">
+                                      {src.snippet}
+                                    </p>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 5. RSVP Summary Action Card */}
                           {msg.actionCard.type === "rsvp_summary" && (
                             <div className="p-4 rounded-xl bg-[#f8f7f4] border border-[#e3e3e2] space-y-3">
                               <div className="text-xs font-semibold text-[#421d24]">
@@ -1138,7 +1494,7 @@ export function ChatWorkspace({
                             </div>
                           )}
 
-                          {/* 4. Milestones Action Card */}
+                          {/* 6. Milestones Action Card */}
                           {msg.actionCard.type === "milestone_list" && (
                             <div className="p-4 rounded-xl bg-[#f8f7f4] border border-[#e3e3e2] space-y-2">
                               <div className="text-xs font-semibold text-[#421d24]">
@@ -1162,6 +1518,45 @@ export function ChatWorkspace({
                               </div>
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {/* Assistant Message Action Toolbar (ChatGPT-style) */}
+                      {!isUser && (
+                        <div className="mt-3.5 pt-2.5 border-t border-[#e3e3e2]/60 flex items-center justify-between text-[11px] text-[#666666]">
+                          <div className="flex items-center space-x-3">
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(msg.content, msg.id)}
+                              className="hover:text-[#292827] flex items-center space-x-1 transition-colors"
+                              title="Copy response"
+                            >
+                              {copiedId === msg.id ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                  <span className="text-emerald-700">Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                            <span className="text-[#e3e3e2]">|</span>
+                            <span className="text-[10px] text-[#666666]/70">
+                              {selectedModel}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center space-x-2">
+                            <span className="text-[10px] text-[#666666]/70">
+                              {new Date(msg.createdAt).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
                         </div>
                       )}
                     </div>

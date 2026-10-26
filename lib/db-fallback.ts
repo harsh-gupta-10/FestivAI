@@ -140,6 +140,14 @@ export class MockD1Database {
         if (cleanSql.includes("banner_r2_key = ?")) {
           existing.banner_r2_key = params[0];
         }
+        if (cleanSql.includes("currency = ?") && cleanSql.includes("total_budget = ?")) {
+          existing.total_budget = Number(params[0]) || existing.total_budget;
+          existing.currency = String(params[1]).toUpperCase().trim();
+        } else if (cleanSql.includes("currency = ?")) {
+          existing.currency = String(params[0]).toUpperCase().trim();
+        } else if (cleanSql.includes("total_budget = ?")) {
+          existing.total_budget = Number(params[0]) || existing.total_budget;
+        }
         this.events.set(eventId, existing);
         return 1;
       }

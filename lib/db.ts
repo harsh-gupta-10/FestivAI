@@ -194,6 +194,44 @@ export async function updateEventBannerInDb(eventId: string, bannerKey: string):
   }
 }
 
+export async function updateEventCurrencyInDb(eventId: string, currency: string): Promise<boolean> {
+  const { DB } = await getAppBindings();
+  await ensureDbTables(DB);
+
+  try {
+    const query = "UPDATE events SET currency = ? WHERE id = ?";
+    await DB.prepare(query).bind(currency.toUpperCase().trim(), eventId).run();
+    return true;
+  } catch (error) {
+    console.error("Error updating currency in DB:", error);
+    return false;
+  }
+}
+
+export async function updateEventBudgetInDb(
+  eventId: string,
+  totalBudget: number,
+  currency?: string
+): Promise<boolean> {
+  const { DB } = await getAppBindings();
+  await ensureDbTables(DB);
+
+  try {
+    if (currency) {
+      const query = "UPDATE events SET total_budget = ?, currency = ? WHERE id = ?";
+      await DB.prepare(query).bind(totalBudget, currency.toUpperCase().trim(), eventId).run();
+    } else {
+      const query = "UPDATE events SET total_budget = ? WHERE id = ?";
+      await DB.prepare(query).bind(totalBudget, eventId).run();
+    }
+    return true;
+  } catch (error) {
+    console.error("Error updating budget in DB:", error);
+    return false;
+  }
+}
+
+
 export async function getRsvpsForEvent(eventId: string): Promise<RsvpRecord[]> {
   const { DB } = await getAppBindings();
   await ensureDbTables(DB);

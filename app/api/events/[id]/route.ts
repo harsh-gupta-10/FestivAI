@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEventByIdOrSlug, updateEventPlanInDb, updateEventBannerInDb, getRsvpsForEvent } from "@/lib/db";
+import {
+  getEventByIdOrSlug,
+  updateEventPlanInDb,
+  updateEventBannerInDb,
+  updateEventCurrencyInDb,
+  updateEventBudgetInDb,
+  getRsvpsForEvent,
+} from "@/lib/db";
 import { AIEventPlan } from "@/types";
 
 export async function GET(
@@ -41,11 +48,21 @@ export async function PATCH(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    const { updatedPlan, bannerKey } = body;
+    const { updatedPlan, bannerKey, currency, totalBudget } = body;
 
     if (bannerKey !== undefined) {
       await updateEventBannerInDb(existing.event.id, bannerKey);
       existing.event.banner_r2_key = bannerKey;
+    }
+
+    if (currency !== undefined) {
+      await updateEventCurrencyInDb(existing.event.id, currency);
+      existing.event.currency = currency.toUpperCase().trim();
+    }
+
+    if (totalBudget !== undefined) {
+      await updateEventBudgetInDb(existing.event.id, Number(totalBudget), currency);
+      existing.event.total_budget = Number(totalBudget);
     }
 
     if (updatedPlan) {
@@ -56,6 +73,8 @@ export async function PATCH(
       success: true,
       message: "Event updated successfully",
       banner_r2_key: existing.event.banner_r2_key,
+      currency: existing.event.currency,
+      total_budget: existing.event.total_budget,
     });
   } catch (error: any) {
     console.error("PATCH /api/events/[id] error:", error);
