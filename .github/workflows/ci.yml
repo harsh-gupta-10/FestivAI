@@ -1,0 +1,34 @@
+name: CI Quality Gate & Automated Testing
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  verify:
+    name: Lint, Typecheck & 84-Test Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Code Quality & Linting (ESLint)
+        run: npm run lint
+
+      - name: Static Type Verification (TypeScript)
+        run: npm run typecheck
+
+      - name: Run Automated Test Suites (84 Tests / 17 Suites)
+        run: npm test
