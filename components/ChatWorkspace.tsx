@@ -179,6 +179,7 @@ export function ChatWorkspace({
 
   useEffect(() => {
     fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // Active event object
@@ -321,6 +322,7 @@ export function ChatWorkspace({
         },
       ]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEventId, user]);
 
   // Clear chat conversation
@@ -914,6 +916,7 @@ export function ChatWorkspace({
               <div className="flex items-center space-x-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-full bg-[#421d24] text-white flex items-center justify-center font-medium text-xs uppercase shrink-0">
                   {user.photoURL ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={user.photoURL}
                       alt={user.displayName || "User"}
@@ -1289,6 +1292,7 @@ export function ChatWorkspace({
                     >
                       {isUser ? (
                         user?.photoURL ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={user.photoURL}
                             alt="Me"

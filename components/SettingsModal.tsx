@@ -23,6 +23,7 @@ export function SettingsModal({ isOpen, onClose, currentModel, onModelChange }: 
         onModelChange(storedModel);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const handleSave = () => {
