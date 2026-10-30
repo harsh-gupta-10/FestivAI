@@ -29,10 +29,13 @@ import {
   ShieldAlert,
   LogIn,
   Save,
+  Printer,
 } from "lucide-react";
 import { formatCurrency, getCurrencySymbol, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { EditEventModal } from "@/components/EditEventModal";
 import { useAuth } from "@/context/AuthContext";
+import { generateIcsCalendar } from "@/lib/calendar";
+import { getErrorMessage } from "@/lib/error";
 
 
 export interface EventDashboardProps {
@@ -427,14 +430,14 @@ export function EventDashboard({ params }: EventDashboardProps) {
       });
 
       setEvent({ ...event, banner_r2_key: data.key });
-    } catch (err: any) {
-      alert("Failed to upload banner: " + err.message);
+    } catch (err: unknown) {
+      alert("Failed to upload banner: " + getErrorMessage(err));
     } finally {
       setIsUploadingBanner(false);
     }
   };
 
-  // Export Event Kit
+  // Export Event Kit (JSON)
   const handleExportJson = () => {
     if (!event || !plan) return;
     const kit = {
@@ -451,6 +454,42 @@ export function EventDashboard({ params }: EventDashboardProps) {
     a.download = `${event.slug || "event"}-festivai-kit.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // One-click iCalendar (.ics) export for Apple/Google/Outlook calendar sync
+  const handleExportIcs = () => {
+    if (!event) return;
+    const icsContent = generateIcsCalendar(event, plan);
+    const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${event.slug || "celebration"}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Print-ready celebration day-of execution run-sheet
+  const handlePrintRunSheet = () => {
+    if (typeof window !== "undefined") {
+      window.print();
+    }
+  };
+
+  // Instant emergency budget cut with automatic mathematical reallocation
+  const handleApplyEmergencyCut = (percentage: number) => {
+    if (!plan || !event) return;
+    const factor = (100 - percentage) / 100;
+    const updatedCategories = plan.budgetBreakdown.map((cat) => ({
+      ...cat,
+      allocatedAmount: Math.round(cat.allocatedAmount * factor),
+    }));
+    const newTotalBudget = Math.round(event.total_budget * factor);
+    const updatedPlan: AIEventPlan = { ...plan, budgetBreakdown: updatedCategories };
+    setPlan(updatedPlan);
+    latestPlanRef.current = updatedPlan;
+    setEvent({ ...event, total_budget: newTotalBudget });
+    debouncedSyncPlan(updatedPlan);
   };
 
   if (authLoading) {
@@ -696,12 +735,36 @@ export function EventDashboard({ params }: EventDashboardProps) {
             </Link>
 
             <button
+              type="button"
               onClick={handleExportJson}
               className="p-2.5 rounded-buttons text-xs font-medium bg-white hover:bg-[#f8f7f5] text-[#292827] border border-[#e3e3e2] transition-colors flex items-center space-x-1.5"
               title="Export Event Kit (JSON)"
+              aria-label="Export Event Kit as JSON"
             >
-              <Download className="w-4 h-4 text-[#666666]" />
+              <Download className="w-4 h-4 text-[#666666]" aria-hidden="true" />
               <span className="hidden sm:inline">Export Kit</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportIcs}
+              className="p-2.5 rounded-buttons text-xs font-medium bg-white hover:bg-[#f8f7f5] text-[#292827] border border-[#e3e3e2] transition-colors flex items-center space-x-1.5"
+              title="Sync to Apple Calendar, Google Calendar, or Outlook (.ics)"
+              aria-label="Export to Calendar (.ics)"
+            >
+              <Calendar className="w-4 h-4 text-[#714cb6]" aria-hidden="true" />
+              <span className="hidden sm:inline">Add to Calendar</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrintRunSheet}
+              className="p-2.5 rounded-buttons text-xs font-medium bg-white hover:bg-[#f8f7f5] text-[#292827] border border-[#e3e3e2] transition-colors flex items-center space-x-1.5"
+              title="Print celebration day-of execution run-sheet"
+              aria-label="Print celebration run-sheet"
+            >
+              <Printer className="w-4 h-4 text-[#666666]" aria-hidden="true" />
+              <span className="hidden sm:inline">Print Run-Sheet</span>
             </button>
 
             <button
@@ -1006,7 +1069,7 @@ export function EventDashboard({ params }: EventDashboardProps) {
             {/* Save Controls & Overall summary pills */}
             <div className="flex flex-wrap items-center gap-3">
               {/* Save Status & Action Button */}
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2" aria-live="polite">
                 {saveStatus === "saving" && (
                   <span className="flex items-center text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5 text-amber-600" />
@@ -1031,6 +1094,38 @@ export function EventDashboard({ params }: EventDashboardProps) {
                     Save failed (retry)
                   </span>
                 )}
+
+                {/* Emergency Cut Quick Buttons */}
+                <div className="hidden sm:flex items-center space-x-1.5 bg-[#f8f7f5] px-2.5 py-1 rounded-xl border border-[#e3e3e2] text-xs">
+                  <span className="text-[11px] font-semibold text-[#666666]">Cut:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyEmergencyCut(10)}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-rose-50 text-rose-700 font-semibold border border-rose-200 text-[11px] transition-colors"
+                    title="Cut total budget by 10% across all categories"
+                    aria-label="Reduce budget by 10%"
+                  >
+                    -10%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyEmergencyCut(20)}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-rose-50 text-rose-700 font-semibold border border-rose-200 text-[11px] transition-colors"
+                    title="Cut total budget by 20% across all categories"
+                    aria-label="Reduce budget by 20%"
+                  >
+                    -20%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyEmergencyCut(30)}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-rose-50 text-rose-700 font-semibold border border-rose-200 text-[11px] transition-colors"
+                    title="Cut total budget by 30% across all categories"
+                    aria-label="Reduce budget by 30%"
+                  >
+                    -30%
+                  </button>
+                </div>
 
                 <button
                   type="button"

@@ -19,9 +19,15 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#e3e3e2] bg-[#f2f0eb]/90 backdrop-blur-md">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-[#421d24] focus:text-white focus:rounded-lg focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#714cb6]"
+      >
+        Skip to main content
+      </a>
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         {/* Brand */}
-        <Link href="/" className="flex items-center space-x-2.5 group">
+        <Link href="/" className="flex items-center space-x-2.5 group" aria-label="FestivAI Homepage">
           <div className="w-8 h-8 rounded-lg bg-[#421d24] text-white flex items-center justify-center font-bold text-sm tracking-tight shadow-sm group-hover:scale-105 transition-transform duration-200">
             F
           </div>
@@ -40,7 +46,7 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
         {/* Center / Edge Badges */}
         <div className="hidden md:flex items-center space-x-2 text-xs font-[460] text-[#666666]">
           <span className="inline-flex items-center px-3 py-1 rounded-full bg-white border border-[#e3e3e2] text-[#292827] shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse mr-2" />
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse mr-2" aria-hidden="true" />
             <span>Cloudflare Edge Network</span>
           </span>
         </div>
@@ -51,13 +57,16 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
             href="/app"
             className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-[540] text-[#292827] hover:text-white hover:bg-[#421d24] bg-white border border-[#e3e3e2] shadow-sm transition-colors"
           >
-            <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#714cb6]" />
+            <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#714cb6]" aria-hidden="true" />
             <span>Workspace</span>
           </Link>
 
           {onToggleInspector && (
             <button
+              type="button"
               onClick={onToggleInspector}
+              aria-label="Toggle Live GenAI Prompt & Raw Response Inspector"
+              aria-pressed={isInspectorOpen}
               className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-[540] transition-all border ${
                 isInspectorOpen
                   ? "bg-[#421d24] text-white border-[#421d24] shadow-sm"
@@ -65,19 +74,21 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
               }`}
               title="Toggle Live GenAI Prompt & Raw Response Inspector"
             >
-              <Sparkles className="w-3.5 h-3.5 mr-1.5 text-amber-500" />
+              <Sparkles className="w-3.5 h-3.5 mr-1.5 text-amber-500" aria-hidden="true" />
               <span>Inspector</span>
-              <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
             </button>
           )}
 
           {onOpenSettings && (
             <button
+              type="button"
               onClick={onOpenSettings}
+              aria-label="Open AI Model & Key Settings"
               className="p-2 rounded-lg bg-white hover:bg-[#f8f7f5] text-[#292827] border border-[#e3e3e2] transition-colors"
               title="Open AI Model & Key Settings"
             >
-              <Settings className="w-4 h-4" />
+              <Settings className="w-4 h-4" aria-hidden="true" />
             </button>
           )}
 
@@ -85,7 +96,11 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
           {user ? (
             <div className="relative">
               <button
+                type="button"
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                aria-expanded={isUserMenuOpen}
+                aria-haspopup="menu"
+                aria-label="User account menu"
                 className="flex items-center space-x-2 p-1 pl-2 pr-2.5 rounded-xl bg-white border border-[#e3e3e2] hover:border-[#714cb6] transition-all shadow-sm text-xs"
               >
                 {user.photoURL ? (
@@ -106,27 +121,35 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
               </button>
 
               {isUserMenuOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl border border-[#e3e3e2] shadow-xl py-1.5 z-50 animate-fade-in text-xs">
+                <div
+                  role="menu"
+                  aria-orientation="vertical"
+                  aria-label="User options"
+                  className="absolute right-0 mt-2 w-48 bg-white rounded-xl border border-[#e3e3e2] shadow-xl py-1.5 z-50 animate-fade-in text-xs"
+                >
                   <div className="px-3 py-2 border-b border-[#e3e3e2]">
                     <p className="font-semibold text-[#292827] truncate">{user.displayName || "Organizer"}</p>
                     <p className="text-[11px] text-[#666666] truncate">{user.email}</p>
                   </div>
                   <Link
                     href="/app"
+                    role="menuitem"
                     onClick={() => setIsUserMenuOpen(false)}
                     className="flex items-center space-x-2 px-3 py-2 text-[#292827] hover:bg-[#f2f0eb] transition-colors"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-[#714cb6]" />
+                    <Sparkles className="w-3.5 h-3.5 text-[#714cb6]" aria-hidden="true" />
                     <span>My Celebrations</span>
                   </Link>
                   <button
+                    type="button"
+                    role="menuitem"
                     onClick={() => {
                       setIsUserMenuOpen(false);
                       logout();
                     }}
                     className="w-full flex items-center space-x-2 px-3 py-2 text-rose-700 hover:bg-rose-50 transition-colors text-left"
                   >
-                    <LogOut className="w-3.5 h-3.5" />
+                    <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
                     <span>Sign Out</span>
                   </button>
                 </div>
@@ -134,7 +157,9 @@ export function Navbar({ onOpenSettings, onToggleInspector, isInspectorOpen }: N
             </div>
           ) : (
             <button
+              type="button"
               onClick={() => openAuthModal("signin")}
+              aria-label="Sign in to your account"
               className="inline-flex items-center px-3.5 py-1.5 rounded-lg text-xs font-[540] text-white bg-[#421d24] hover:bg-[#572730] transition-all shadow-sm"
             >
               Sign In

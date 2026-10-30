@@ -87,7 +87,7 @@ export interface PublicScheduleItem {
 export interface AIEventPlan {
   eventSummary: {
     tagline: string;
-    themeColors: [string, string, string]; // 3 hex colors
+    themeColors: [string, string, string] | string[]; // 3 hex colors
     welcomeNote: string;
   };
   budgetBreakdown: BudgetCategory[];
@@ -104,3 +104,90 @@ export interface AIEventPlan {
     changedFields?: string[];
   };
 }
+
+export interface ChatToolCallItem {
+  id: string;
+  tool: "check_weather" | "search_web" | "sync_d1" | "currency_switch";
+  title: string;
+  summary: string;
+  data?: unknown;
+  status: "completed" | "running" | "error";
+}
+
+export type ActionCardType =
+  | "budget_summary"
+  | "rsvp_summary"
+  | "event_created"
+  | "milestone_list"
+  | "ideas_grid"
+  | "alert"
+  | "weather_card"
+  | "web_results";
+
+export interface ChatActionCard<T = unknown> {
+  type: ActionCardType;
+  title?: string;
+  data?: T;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: string;
+  toolCalls?: ChatToolCallItem[];
+  actionCard?: ChatActionCard;
+}
+
+export interface ProactiveAlert {
+  id: string;
+  type: "budget" | "rsvp" | "weather" | "milestone";
+  title: string;
+  message: string;
+  actionText?: string;
+  actionPrompt?: string;
+}
+
+export interface EventItem {
+  id: string;
+  title: string;
+  event_type: string;
+  event_date: string;
+  location: string;
+  guest_count: number;
+  total_budget: number;
+  currency: string;
+  vibe: string;
+  slug: string;
+  organizer_email?: string;
+  organizer_name?: string;
+  banner_r2_key?: string | null;
+  ai_plan_json?: string;
+}
+
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  message?: string;
+  data?: T;
+  error?: string;
+}
+
+export interface ApiEventDetailsResponse {
+  success: boolean;
+  isOwner: boolean;
+  event: Partial<EventRecord>;
+  plan?: Partial<AIEventPlan>;
+  rsvps?: RsvpRecord[];
+  chatHistory?: ChatMessage[];
+  confirmedGuestsCount: number;
+  error?: string;
+}
+
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetSeconds: number;
+  resetInMs: number;
+  error?: string;
+}
+

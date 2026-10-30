@@ -16,37 +16,18 @@ import { searchWebIntelligence, WebSearchReport } from "@/lib/tools/web-search";
 import { formatCurrency, getCurrencySymbol } from "@/lib/currency";
 import { formatCelebrationDate } from "@/lib/date";
 import { sanitizeString, validateBudget, validateEventDate } from "@/lib/validation";
-import { EventRecord } from "@/types";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { getErrorMessage } from "@/lib/error";
+import type {
+  EventRecord,
+  RsvpRecord,
+  AIEventPlan,
+  ChatMessage,
+  ChatToolCallItem as ToolCallItem,
+  ChatActionCard,
+} from "@/types";
 
-export interface ToolCallItem {
-  id: string;
-  tool: "check_weather" | "search_web" | "sync_d1" | "currency_switch";
-  title: string;
-  summary: string;
-  data?: any;
-  status: "completed" | "running" | "error";
-}
-
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  createdAt: string;
-  toolCalls?: ToolCallItem[];
-  actionCard?: {
-    type:
-      | "budget_summary"
-      | "rsvp_summary"
-      | "event_created"
-      | "milestone_list"
-      | "ideas_grid"
-      | "alert"
-      | "weather_card"
-      | "web_results";
-    title?: string;
-    data?: any;
-  };
-}
+export type { ToolCallItem, ChatMessage };
 
 // Persist chat to Cloudflare D1 helper
 async function respondWithChat(
@@ -55,8 +36,8 @@ async function respondWithChat(
   payload: {
     response: string;
     toolCalls?: ToolCallItem[];
-    actionCard?: any;
-    updatedEvent?: any;
+    actionCard?: ChatActionCard<unknown>;
+    updatedEvent?: Partial<EventRecord>;
   }
 ) {
   if (activeEventId) {
@@ -146,6 +127,16 @@ export async function DELETE(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    // 0. Rate limiting protection (45 requests per 60 seconds per IP)
+    const clientIp = getClientIp(req);
+    const rateCheck = checkRateLimit(`chat_${clientIp}`, 45, 60);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: rateCheck.error || "Rate limit exceeded. Please wait a moment before sending more messages." },
+        { status: 429, headers: { "Retry-After": String(rateCheck.resetSeconds) } }
+      );
+    }
+
     const { messages, eventId, userEmail, userName, apiKey: clientBodyKey, model } = body as {
       messages: ChatMessage[];
       eventId?: string;
@@ -170,9 +161,9 @@ export async function POST(req: NextRequest) {
     ).trim().toLowerCase();
 
     // 1. Fetch current active event details if selected
-    let activeEvent: any = null;
-    let activePlan: any = null;
-    let activeRsvps: any[] = [];
+    let activeEvent: EventRecord | null = null;
+    let activePlan: AIEventPlan | null = null;
+    let activeRsvps: RsvpRecord[] = [];
 
     if (eventId) {
       const eventData = await getEventByIdOrSlug(eventId);
@@ -316,7 +307,7 @@ export async function POST(req: NextRequest) {
         lowerPrompt.includes("theme") ||
         lowerPrompt.includes("vibe"));
 
-    if (isEditEventIntent) {
+    if (isEditEventIntent && activeEvent) {
       const updates: Partial<EventRecord> = {};
       const changesList: string[] = [];
 

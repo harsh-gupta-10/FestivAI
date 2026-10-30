@@ -23,10 +23,11 @@ export async function GET(req: NextRequest) {
       success: true,
       events,
     });
-  } catch (error: any) {
-    console.error("GET /api/events error:", error);
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : "Failed to fetch events";
+    console.error("GET /api/events error:", errorMsg);
     return NextResponse.json(
-      { error: error?.message || "Failed to fetch events" },
+      { error: errorMsg },
       { status: 500 }
     );
   }

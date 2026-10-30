@@ -9,13 +9,14 @@ import {
   deleteEventRecord,
   getRsvpsForEvent,
 } from "@/lib/db";
-import { AIEventPlan, EventRecord } from "@/types";
+import { AIEventPlan, EventRecord, ChatMessage } from "@/types";
 import {
   sanitizeString,
   validateBudget,
   validateEventDate,
   validateGuestCount,
 } from "@/lib/validation";
+import { getErrorMessage } from "@/lib/error";
 
 export async function GET(
   req: NextRequest,
@@ -45,7 +46,7 @@ export async function GET(
 
     // If requester is verified owner, return full private dashboard details
     if (isOwner) {
-      let chatHistory: any[] = [];
+      let chatHistory: ChatMessage[] = [];
       if (data.event.chat_history_json) {
         try {
           chatHistory = JSON.parse(data.event.chat_history_json);
@@ -87,9 +88,10 @@ export async function GET(
       },
       confirmedGuestsCount,
     });
-  } catch (error: any) {
-    console.error("GET /api/events/[id] error:", error);
-    return NextResponse.json({ error: "Failed to retrieve event" }, { status: 500 });
+  } catch (error: unknown) {
+    const errorMsg = getErrorMessage(error);
+    console.error("GET /api/events/[id] error:", errorMsg);
+    return NextResponse.json({ error: errorMsg || "Failed to retrieve event" }, { status: 500 });
   }
 }
 
@@ -99,7 +101,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const body = (await req.json()) as any;
+    const body = (await req.json()) as Record<string, any>;
     const existing = await getEventByIdOrSlug(id);
 
     if (!existing) {

@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { X, Mail, Lock, User as UserIcon, Sparkles, AlertCircle, ArrowRight } from "lucide-react";
 
+import { getErrorMessage } from "@/lib/error";
+
 export function AuthModal() {
   const {
     isAuthModalOpen,
@@ -37,9 +39,9 @@ export function AuthModal() {
       } else {
         await signInWithEmail(email.trim(), password);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Auth error:", err);
-      let msg = err.message || "Authentication failed. Please check your credentials.";
+      let msg = getErrorMessage(err) || "Authentication failed. Please check your credentials.";
       if (msg.includes("auth/invalid-credential") || msg.includes("auth/wrong-password")) {
         msg = "Invalid email or password. Please try again.";
       } else if (msg.includes("auth/email-already-in-use")) {
@@ -60,9 +62,10 @@ export function AuthModal() {
     setLoading(true);
     try {
       await signInWithGoogle();
-    } catch (err: any) {
-      if (!err.message?.includes("popup-closed")) {
-        setError(err.message || "Failed to sign in with Google.");
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err);
+      if (!msg.includes("popup-closed")) {
+        setError(msg || "Failed to sign in with Google.");
       }
     } finally {
       setLoading(false);

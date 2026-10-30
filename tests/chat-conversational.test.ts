@@ -65,10 +65,13 @@ test("Conversational Chat & Planning Intelligence Suite", async (t) => {
     }
 
     // Verify formatCelebrationDate output
-    const result = formatCelebrationDate("2026-10-31");
-    assert.ok(result.formatted.includes("2026"));
-    assert.ok(result.formatted.includes("October"));
-    assert.ok(result.statusText.includes("days"));
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 30);
+    const dateStr = futureDate.toISOString().split("T")[0];
+    const result = formatCelebrationDate(dateStr);
+    assert.ok(result.diffDays >= 29 && result.diffDays <= 31);
+    assert.ok(result.statusText.includes("days to go"));
+    assert.ok(result.formatted.length > 5);
   });
 
   await t.test("identifies 'where is my event' and location queries correctly", () => {

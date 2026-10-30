@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "test": "node --test --experimental-strip-types tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "db:local": "wrangler d1 execute festivai-db --local --file=./schema.sql",

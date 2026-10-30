@@ -42,7 +42,7 @@ export async function GET(
         "X-Content-Type-Options": "nosniff",
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("GET /api/r2/[key] error:", error);
     return NextResponse.json({ error: "Failed to serve R2 object" }, { status: 500 });
   }

@@ -456,8 +456,17 @@ export default function MarketingLandingPage() {
           </div>
 
           {/* Interactive Tab Switcher */}
-          <div className="bg-white p-1.5 rounded-2xl border border-[#e3e3e2] max-w-2xl mx-auto grid grid-cols-3 gap-1 shadow-sm">
+          <div
+            role="tablist"
+            aria-label="FestivAI Core Pillars"
+            className="bg-white p-1.5 rounded-2xl border border-[#e3e3e2] max-w-2xl mx-auto grid grid-cols-3 gap-1 shadow-sm"
+          >
             <button
+              type="button"
+              role="tab"
+              id="tab-chat"
+              aria-selected={activeTab === "chat"}
+              aria-controls="panel-chat"
               onClick={() => setActiveTab("chat")}
               className={`py-3 px-3 rounded-xl text-center transition-all flex flex-col sm:flex-row items-center justify-center space-y-1 sm:space-y-0 sm:space-x-2 ${
                 activeTab === "chat"
@@ -465,11 +474,16 @@ export default function MarketingLandingPage() {
                   : "bg-white text-[#292827] hover:bg-[#f2f0eb]"
               }`}
             >
-              <MessageSquare className="w-4 h-4 text-[#d4c7ff]" />
+              <MessageSquare className="w-4 h-4 text-[#d4c7ff]" aria-hidden="true" />
               <span className="text-xs sm:text-sm">AI Concierge</span>
             </button>
 
             <button
+              type="button"
+              role="tab"
+              id="tab-budget"
+              aria-selected={activeTab === "budget"}
+              aria-controls="panel-budget"
               onClick={() => setActiveTab("budget")}
               className={`py-3 px-3 rounded-xl text-center transition-all flex flex-col sm:flex-row items-center justify-center space-y-1 sm:space-y-0 sm:space-x-2 ${
                 activeTab === "budget"
@@ -477,11 +491,16 @@ export default function MarketingLandingPage() {
                   : "bg-white text-[#292827] hover:bg-[#f2f0eb]"
               }`}
             >
-              <DollarSign className="w-4 h-4 text-[#d4c7ff]" />
+              <DollarSign className="w-4 h-4 text-[#d4c7ff]" aria-hidden="true" />
               <span className="text-xs sm:text-sm">Budget Matrix</span>
             </button>
 
             <button
+              type="button"
+              role="tab"
+              id="tab-rsvp"
+              aria-selected={activeTab === "rsvp"}
+              aria-controls="panel-rsvp"
               onClick={() => setActiveTab("rsvp")}
               className={`py-3 px-3 rounded-xl text-center transition-all flex flex-col sm:flex-row items-center justify-center space-y-1 sm:space-y-0 sm:space-x-2 ${
                 activeTab === "rsvp"
@@ -489,7 +508,7 @@ export default function MarketingLandingPage() {
                   : "bg-white text-[#292827] hover:bg-[#f2f0eb]"
               }`}
             >
-              <Share2 className="w-4 h-4 text-[#d4c7ff]" />
+              <Share2 className="w-4 h-4 text-[#d4c7ff]" aria-hidden="true" />
               <span className="text-xs sm:text-sm">RSVP Portal</span>
             </button>
           </div>
@@ -497,7 +516,12 @@ export default function MarketingLandingPage() {
           {/* Tab Showcase Card */}
           <div className="paper-card p-6 sm:p-10 max-w-4xl mx-auto shadow-sm">
             {activeTab === "chat" && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+              <div
+                role="tabpanel"
+                id="panel-chat"
+                aria-labelledby="tab-chat"
+                className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center"
+              >
                 <div className="space-y-4">
                   <div className="w-10 h-10 rounded-xl bg-[#421d24] text-white flex items-center justify-center">
                     <MessageSquare className="w-5 h-5 text-[#d4c7ff]" />
@@ -560,7 +584,12 @@ export default function MarketingLandingPage() {
             )}
 
             {activeTab === "budget" && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+              <div
+                role="tabpanel"
+                id="panel-budget"
+                aria-labelledby="tab-budget"
+                className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center"
+              >
                 <div className="space-y-4">
                   <div className="w-10 h-10 rounded-xl bg-[#0c4243] text-white flex items-center justify-center">
                     <DollarSign className="w-5 h-5 text-[#d4c7ff]" />
@@ -581,6 +610,7 @@ export default function MarketingLandingPage() {
                       {["INR", "USD", "EUR", "GBP", "CAD", "AUD"].map((c) => (
                         <button
                           key={c}
+                          type="button"
                           onClick={() => setDemoCurrency(c)}
                           className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                             demoCurrency === c
@@ -641,7 +671,12 @@ export default function MarketingLandingPage() {
             )}
 
             {activeTab === "rsvp" && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+              <div
+                role="tabpanel"
+                id="panel-rsvp"
+                aria-labelledby="tab-rsvp"
+                className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center"
+              >
                 <div className="space-y-4">
                   <div className="w-10 h-10 rounded-xl bg-[#714cb6] text-white flex items-center justify-center">
                     <Share2 className="w-5 h-5 text-[#d4c7ff]" />
@@ -1124,18 +1159,27 @@ export default function MarketingLandingPage() {
                   className="paper-card overflow-hidden transition-all border border-[#e3e3e2]"
                 >
                   <button
+                    type="button"
+                    id={`faq-btn-${idx}`}
+                    aria-expanded={isOpen}
+                    aria-controls={`faq-ans-${idx}`}
                     onClick={() => toggleFaq(idx)}
                     className="w-full p-4 sm:p-5 text-left flex items-center justify-between font-semibold text-xs sm:text-sm text-[#292827] hover:text-[#714cb6] transition-colors"
                   >
                     <span>{faq.q}</span>
                     {isOpen ? (
-                      <ChevronUp className="w-4 h-4 text-[#714cb6] shrink-0 ml-2" />
+                      <ChevronUp className="w-4 h-4 text-[#714cb6] shrink-0 ml-2" aria-hidden="true" />
                     ) : (
-                      <ChevronDown className="w-4 h-4 text-[#666666] shrink-0 ml-2" />
+                      <ChevronDown className="w-4 h-4 text-[#666666] shrink-0 ml-2" aria-hidden="true" />
                     )}
                   </button>
                   {isOpen && (
-                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 text-xs sm:text-sm text-[#666666] leading-relaxed border-t border-[#f2f0eb] pt-3">
+                    <div
+                      id={`faq-ans-${idx}`}
+                      role="region"
+                      aria-labelledby={`faq-btn-${idx}`}
+                      className="px-4 sm:px-5 pb-4 sm:pb-5 text-xs sm:text-sm text-[#666666] leading-relaxed border-t border-[#f2f0eb] pt-3"
+                    >
                       {faq.a}
                     </div>
                   )}

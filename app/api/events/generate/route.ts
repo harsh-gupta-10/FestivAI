@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateMasterplan } from "@/lib/openai";
 import { createEventRecord } from "@/lib/db";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { getErrorMessage } from "@/lib/error";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as any;
+    // 0. Rate limiting protection (15 event generations per 60 seconds per IP)
+    const clientIp = getClientIp(req);
+    const rateCheck = checkRateLimit(`gen_${clientIp}`, 15, 60);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: rateCheck.error || "Generation rate limit exceeded. Please wait a moment." },
+        { status: 429, headers: { "Retry-After": String(rateCheck.resetSeconds) } }
+      );
+    }
+
+    const body = await req.json();
     const {
       eventType = "wedding",
       title,
@@ -18,7 +30,20 @@ export async function POST(req: NextRequest) {
       organizerEmail,
       bannerKey,
       model = "o3-mini",
-    } = body;
+    } = body as {
+      eventType?: string;
+      title: string;
+      eventDate: string;
+      location: string;
+      guestCount: number | string;
+      totalBudget: number | string;
+      currency?: string;
+      vibe?: string;
+      organizerName: string;
+      organizerEmail: string;
+      bannerKey?: string | null;
+      model?: string;
+    };
 
     const {
       validateEmail,
@@ -125,10 +150,11 @@ export async function POST(req: NextRequest) {
         rawJsonOutput: aiResult.rawJsonOutput,
       },
     });
-  } catch (error: any) {
-    console.error("API /api/events/generate error:", error);
+  } catch (error: unknown) {
+    const errorMsg = getErrorMessage(error);
+    console.error("API /api/events/generate error:", errorMsg);
     return NextResponse.json(
-      { error: error?.message || "Failed to generate event masterplan" },
+      { error: errorMsg || "Failed to generate event masterplan" },
       { status: 500 }
     );
   }

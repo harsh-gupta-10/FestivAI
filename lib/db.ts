@@ -1,5 +1,6 @@
 import { getAppBindings } from "./cloudflare.ts";
-import type { EventRecord, RsvpRecord, AIEventPlan } from "../types/index.ts";
+import type { EventRecord, RsvpRecord, AIEventPlan, ChatMessage } from "../types/index.ts";
+import { getErrorMessage } from "./error.ts";
 
 let isTablesInitialized = false;
 
@@ -7,7 +8,7 @@ let isTablesInitialized = false;
  * Automatically creates events and rsvps tables and indexes in Cloudflare D1
  * if they do not exist yet.
  */
-export async function ensureDbTables(DB: any): Promise<void> {
+export async function ensureDbTables(DB: D1Database | { prepare: (sql: string) => any } | null | undefined): Promise<void> {
   if (isTablesInitialized) return;
   if (!DB || typeof DB.prepare !== "function") return;
 
@@ -368,7 +369,7 @@ export async function updateEventDetailsInDb(
 
 export async function updateEventChatHistoryInDb(
   eventId: string,
-  messages: any[]
+  messages: ChatMessage[]
 ): Promise<boolean> {
   const { DB } = await getAppBindings();
   await ensureDbTables(DB);
@@ -384,15 +385,15 @@ export async function updateEventChatHistoryInDb(
   }
 }
 
-export async function getEventChatHistoryFromDb(eventId: string): Promise<any[]> {
+export async function getEventChatHistoryFromDb(eventId: string): Promise<ChatMessage[]> {
   const { DB } = await getAppBindings();
   await ensureDbTables(DB);
 
   try {
     const query = "SELECT chat_history_json FROM events WHERE id = ? LIMIT 1";
-    const res = await DB.prepare(query).bind(eventId).first();
-    if (res && (res as any).chat_history_json) {
-      return JSON.parse((res as any).chat_history_json);
+    const res = (await DB.prepare(query).bind(eventId).first()) as { chat_history_json?: string } | null;
+    if (res && res.chat_history_json) {
+      return JSON.parse(res.chat_history_json) as ChatMessage[];
     }
     return [];
   } catch (error) {

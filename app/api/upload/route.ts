@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAppBindings } from "@/lib/cloudflare";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { getErrorMessage } from "@/lib/error";
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit file uploads (20 uploads per minute per IP)
+    const clientIp = getClientIp(req);
+    const rateCheck = checkRateLimit(`upload_${clientIp}`, 20, 60);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: rateCheck.error || "Upload rate limit exceeded. Please wait a minute." },
+        { status: 429, headers: { "Retry-After": String(rateCheck.resetSeconds) } }
+      );
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
@@ -50,8 +62,9 @@ export async function POST(req: NextRequest) {
       contentType,
       size: arrayBuffer.byteLength,
     });
-  } catch (error: any) {
-    console.error("POST /api/upload error:", error);
-    return NextResponse.json({ error: error?.message || "Failed to upload file to R2" }, { status: 500 });
+  } catch (error: unknown) {
+    const errorMsg = getErrorMessage(error);
+    console.error("POST /api/upload error:", errorMsg);
+    return NextResponse.json({ error: errorMsg || "Failed to upload file to R2" }, { status: 500 });
   }
 }

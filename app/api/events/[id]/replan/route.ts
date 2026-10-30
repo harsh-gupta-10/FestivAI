@@ -1,14 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getEventByIdOrSlug, updateEventPlanInDb } from "@/lib/db";
 import { replanMasterplan } from "@/lib/openai";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { getErrorMessage } from "@/lib/error";
+
+interface ReplanRequestBody {
+  replanPrompt: string;
+  model?: string;
+  userEmail?: string;
+  organizer_email?: string;
+}
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const ip = getClientIp(req);
+    const rateLimit = checkRateLimit(`replan:${ip}`, { maxRequests: 20, windowMs: 60 * 1000 });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many replan requests. Please wait a moment." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": Math.ceil(rateLimit.resetInMs / 1000).toString(),
+            "X-RateLimit-Limit": "20",
+            "X-RateLimit-Remaining": "0",
+          },
+        }
+      );
+    }
+
     const { id } = await params;
-    const body = (await req.json()) as any;
+    const body = (await req.json()) as ReplanRequestBody;
     const { replanPrompt, model = "o3-mini" } = body;
 
     const { validateReplanPrompt } = await import("@/lib/validation");
@@ -77,8 +102,8 @@ export async function POST(
         changedFields: replanResult.changedFields,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("POST /api/events/[id]/replan error:", error);
-    return NextResponse.json({ error: error?.message || "Failed to replan event" }, { status: 500 });
+    return NextResponse.json({ error: getErrorMessage(error) || "Failed to replan event" }, { status: 500 });
   }
 }

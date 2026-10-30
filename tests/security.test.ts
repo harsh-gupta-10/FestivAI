@@ -206,10 +206,10 @@ test("Multi-Tenant Authorization & Event Privacy Suite", async (t) => {
   await t.test("verified owner receives full unmasked event command center data", () => {
     const ownerPayload = resolveEventPayload("charlotte@example.com");
     assert.equal(ownerPayload.isOwner, true);
-    assert.equal(ownerPayload.event.total_budget, 45000);
+    assert.equal((ownerPayload.event as any).total_budget, 45000);
     assert.equal(ownerPayload.rsvps?.length, 2);
     assert.equal(ownerPayload.chatHistory?.length, 1);
-    assert.equal(ownerPayload.plan.budgetBreakdown?.length, 2);
+    assert.equal((ownerPayload.plan as any).budgetBreakdown?.length, 2);
   });
 
   await t.test("blocks unauthorized replan, patch, or delete mutations", () => {

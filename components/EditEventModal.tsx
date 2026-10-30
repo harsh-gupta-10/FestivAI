@@ -14,11 +14,13 @@ import {
 } from "lucide-react";
 import { getCurrencySymbol } from "@/lib/currency";
 import { validateBudget, validateEventDate, validateGuestCount, sanitizeString } from "@/lib/validation";
+import { EventRecord, EventItem } from "@/types";
+import { getErrorMessage } from "@/lib/error";
 
 interface EditEventModalProps {
   isOpen: boolean;
   onClose: () => void;
-  event: any;
+  event: EventRecord | EventItem | null;
   userEmail?: string;
   onEventUpdated: (updatedEvent: any) => void;
 }
@@ -119,11 +121,11 @@ export function EditEventModal({
       });
 
       if (!res.ok) {
-        const data = (await res.json()) as any;
+        const data = (await res.json()) as { error?: string };
         throw new Error(data.error || "Failed to save event details");
       }
 
-      const result = (await res.json()) as any;
+      const result = (await res.json()) as { success?: boolean; event?: EventRecord };
       setSaveSuccess(true);
       if (result.event) {
         onEventUpdated(result.event);
@@ -134,8 +136,8 @@ export function EditEventModal({
           event_type: eventType,
           event_date: eventDate,
           location: cleanLocation,
-          guest_count: guestCheck.sanitizedValue,
-          total_budget: budgetCheck.sanitizedValue,
+          guest_count: guestCheck.sanitizedValue ?? guestCount,
+          total_budget: budgetCheck.sanitizedValue ?? totalBudget,
           currency,
           vibe,
         });
@@ -145,9 +147,9 @@ export function EditEventModal({
         setSaveSuccess(false);
         onClose();
       }, 800);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Save error:", err);
-      setErrorMsg(err.message || "Failed to update celebration in Cloudflare D1.");
+      setErrorMsg(getErrorMessage(err) || "Failed to update celebration in Cloudflare D1.");
     } finally {
       setIsSaving(false);
     }
@@ -165,26 +167,33 @@ export function EditEventModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-event-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in"
+    >
       <div className="relative w-full max-w-xl rounded-2xl bg-white border border-[#e3e3e2] shadow-2xl p-6 overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-[#e3e3e2] shrink-0">
           <div className="flex items-center space-x-2.5">
             <div className="p-2 rounded-xl bg-[#421d24] text-white">
-              <Sliders className="w-5 h-5 text-[#d4c7ff]" />
+              <Sliders className="w-5 h-5 text-[#d4c7ff]" aria-hidden="true" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-[#292827]">Edit Celebration Details</h2>
+              <h2 id="edit-event-modal-title" className="text-lg font-bold text-[#292827]">Edit Celebration Details</h2>
               <p className="text-xs text-[#666666]">
                 Modify logistical parameters stored natively in Cloudflare D1
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close edit event dialog"
             className="p-1.5 text-[#666666] hover:text-[#292827] rounded-lg hover:bg-[#f2f0eb] transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
